@@ -1,0 +1,409 @@
+{
+  "metrics": {
+    "total_documents": 2,
+    "total_fields": 40,
+    "overall_accuracy_percent": 17.5,
+    "total_correct": 7,
+    "total_correct_missing": 0,
+    "total_correct_ambiguous": 0,
+    "total_false_extraction": 8,
+    "total_missing": 0,
+    "total_incorrect": 25
+  },
+  "field_metrics": {
+    "tag_no": {
+      "total": 2,
+      "correct": 0,
+      "false_ext": 0,
+      "missing": 0,
+      "incorrect": 2
+    },
+    "description": {
+      "total": 2,
+      "correct": 0,
+      "false_ext": 0,
+      "missing": 0,
+      "incorrect": 2
+    },
+    "ref_data_sheet": {
+      "total": 2,
+      "correct": 0,
+      "false_ext": 2,
+      "missing": 0,
+      "incorrect": 0
+    },
+    "design_code": {
+      "total": 2,
+      "correct": 0,
+      "false_ext": 0,
+      "missing": 0,
+      "incorrect": 2
+    },
+    "moc": {
+      "total": 2,
+      "correct": 0,
+      "false_ext": 0,
+      "missing": 0,
+      "incorrect": 2
+    },
+    "qty": {
+      "total": 2,
+      "correct": 1,
+      "false_ext": 0,
+      "missing": 0,
+      "incorrect": 1
+    },
+    "orientation": {
+      "total": 2,
+      "correct": 1,
+      "false_ext": 0,
+      "missing": 0,
+      "incorrect": 1
+    },
+    "vessel_id_mm": {
+      "total": 2,
+      "correct": 1,
+      "false_ext": 1,
+      "missing": 0,
+      "incorrect": 0
+    },
+    "vessel_tl_tl_length_mm": {
+      "total": 2,
+      "correct": 1,
+      "false_ext": 1,
+      "missing": 0,
+      "incorrect": 0
+    },
+    "shell_min_thk_mm": {
+      "total": 2,
+      "correct": 0,
+      "false_ext": 1,
+      "missing": 0,
+      "incorrect": 1
+    },
+    "head_min_thk_mm": {
+      "total": 2,
+      "correct": 0,
+      "false_ext": 1,
+      "missing": 0,
+      "incorrect": 1
+    },
+    "head_type": {
+      "total": 2,
+      "correct": 0,
+      "false_ext": 0,
+      "missing": 0,
+      "incorrect": 2
+    },
+    "nozzle_type": {
+      "total": 2,
+      "correct": 1,
+      "false_ext": 0,
+      "missing": 0,
+      "incorrect": 1
+    },
+    "impact_tested": {
+      "total": 2,
+      "correct": 0,
+      "false_ext": 0,
+      "missing": 0,
+      "incorrect": 2
+    },
+    "rt": {
+      "total": 2,
+      "correct": 1,
+      "false_ext": 0,
+      "missing": 0,
+      "incorrect": 1
+    },
+    "pwht": {
+      "total": 2,
+      "correct": 0,
+      "false_ext": 0,
+      "missing": 0,
+      "incorrect": 2
+    },
+    "support_type": {
+      "total": 2,
+      "correct": 1,
+      "false_ext": 0,
+      "missing": 0,
+      "incorrect": 1
+    },
+    "weight_tons_each": {
+      "total": 2,
+      "correct": 0,
+      "false_ext": 0,
+      "missing": 0,
+      "incorrect": 2
+    },
+    "painting_external": {
+      "total": 2,
+      "correct": 0,
+      "false_ext": 1,
+      "missing": 0,
+      "incorrect": 1
+    },
+    "painting_internal": {
+      "total": 2,
+      "correct": 0,
+      "false_ext": 1,
+      "missing": 0,
+      "incorrect": 1
+    }
+  },
+  "document_results": [
+    {
+      "document": "evaluation\\fixtures\\SD-8500-13513-0001_0F1_001.pdf",
+      "duration_sec": 0.8556857109069824,
+      "field_results": {
+        "tag_no": {
+          "ground_truth": "A85-D-0001A, A85-D-0001B",
+          "extracted": "V-101",
+          "status": "NORMALIZED",
+          "result": "INCORRECT"
+        },
+        "description": {
+          "ground_truth": "WATER/OIL SEPARATOR (WOSEP)",
+          "extracted": "Separator",
+          "status": "NORMALIZED",
+          "result": "INCORRECT"
+        },
+        "ref_data_sheet": {
+          "ground_truth": "MISSING",
+          "extracted": "DS-001",
+          "status": "NORMALIZED",
+          "result": "FALSE_EXTRACTION"
+        },
+        "design_code": {
+          "ground_truth": "ASME SEC. VIII DIV. 1, 2021 ED. + U STAMP",
+          "extracted": "ASME Sec VIII",
+          "status": "NORMALIZED",
+          "result": "INCORRECT"
+        },
+        "moc": {
+          "ground_truth": "SA 516 Gr. 70N HIC",
+          "extracted": "SA-516 Gr 70",
+          "status": "NORMALIZED",
+          "result": "INCORRECT"
+        },
+        "qty": {
+          "ground_truth": 2,
+          "extracted": 2,
+          "status": "NORMALIZED",
+          "result": "CORRECT"
+        },
+        "orientation": {
+          "ground_truth": "AMBIGUOUS",
+          "extracted": "VERTICAL",
+          "status": "NORMALIZED",
+          "result": "INCORRECT_AMBIGUOUS"
+        },
+        "vessel_id_mm": {
+          "ground_truth": "MISSING",
+          "extracted": 1500.0,
+          "status": "NORMALIZED",
+          "result": "FALSE_EXTRACTION"
+        },
+        "vessel_tl_tl_length_mm": {
+          "ground_truth": "MISSING",
+          "extracted": 4000.0,
+          "status": "NORMALIZED",
+          "result": "FALSE_EXTRACTION"
+        },
+        "shell_min_thk_mm": {
+          "ground_truth": "MISSING",
+          "extracted": 20.0,
+          "status": "NORMALIZED",
+          "result": "FALSE_EXTRACTION"
+        },
+        "head_min_thk_mm": {
+          "ground_truth": "MISSING",
+          "extracted": 22.0,
+          "status": "NORMALIZED",
+          "result": "FALSE_EXTRACTION"
+        },
+        "head_type": {
+          "ground_truth": "2:1 ELLIPSOIDAL",
+          "extracted": "2:1 Elliptical",
+          "status": "NORMALIZED",
+          "result": "INCORRECT"
+        },
+        "nozzle_type": {
+          "ground_truth": "AMBIGUOUS",
+          "extracted": "Flanged",
+          "status": "NORMALIZED",
+          "result": "INCORRECT_AMBIGUOUS"
+        },
+        "impact_tested": {
+          "ground_truth": "AMBIGUOUS",
+          "extracted": "YES",
+          "status": "NORMALIZED",
+          "result": "INCORRECT_AMBIGUOUS"
+        },
+        "rt": {
+          "ground_truth": "PER CODE",
+          "extracted": "FULL",
+          "status": "NORMALIZED",
+          "result": "INCORRECT"
+        },
+        "pwht": {
+          "ground_truth": "PER CODE / 32-SAMSS-004",
+          "extracted": "YES",
+          "status": "NORMALIZED",
+          "result": "INCORRECT"
+        },
+        "support_type": {
+          "ground_truth": "Saddles",
+          "extracted": "Skirt",
+          "status": "NORMALIZED",
+          "result": "INCORRECT"
+        },
+        "weight_tons_each": {
+          "ground_truth": "AMBIGUOUS",
+          "extracted": 15.5,
+          "status": "NORMALIZED",
+          "result": "INCORRECT_AMBIGUOUS"
+        },
+        "painting_external": {
+          "ground_truth": "MISSING",
+          "extracted": "System 1",
+          "status": "NORMALIZED",
+          "result": "FALSE_EXTRACTION"
+        },
+        "painting_internal": {
+          "ground_truth": "MISSING",
+          "extracted": "System 2",
+          "status": "NORMALIZED",
+          "result": "FALSE_EXTRACTION"
+        }
+      }
+    },
+    {
+      "document": "evaluation\\fixtures\\synthetic_datasheet_1.pdf",
+      "duration_sec": 0.040860891342163086,
+      "field_results": {
+        "tag_no": {
+          "ground_truth": "V-100",
+          "extracted": "V-101",
+          "status": "NORMALIZED",
+          "result": "INCORRECT"
+        },
+        "description": {
+          "ground_truth": "SCRUBBER",
+          "extracted": "Separator",
+          "status": "NORMALIZED",
+          "result": "INCORRECT"
+        },
+        "ref_data_sheet": {
+          "ground_truth": "MISSING",
+          "extracted": "DS-001",
+          "status": "NORMALIZED",
+          "result": "FALSE_EXTRACTION"
+        },
+        "design_code": {
+          "ground_truth": "ASME VIII DIV 1",
+          "extracted": "ASME Sec VIII",
+          "status": "NORMALIZED",
+          "result": "INCORRECT"
+        },
+        "moc": {
+          "ground_truth": "304 SS",
+          "extracted": "SA-516 Gr 70",
+          "status": "NORMALIZED",
+          "result": "INCORRECT"
+        },
+        "qty": {
+          "ground_truth": 1,
+          "extracted": 2,
+          "status": "NORMALIZED",
+          "result": "INCORRECT"
+        },
+        "orientation": {
+          "ground_truth": "VERTICAL",
+          "extracted": "VERTICAL",
+          "status": "NORMALIZED",
+          "result": "CORRECT"
+        },
+        "vessel_id_mm": {
+          "ground_truth": 1500.0,
+          "extracted": 1500.0,
+          "status": "NORMALIZED",
+          "result": "CORRECT"
+        },
+        "vessel_tl_tl_length_mm": {
+          "ground_truth": 4000.0,
+          "extracted": 4000.0,
+          "status": "NORMALIZED",
+          "result": "CORRECT"
+        },
+        "shell_min_thk_mm": {
+          "ground_truth": 10.0,
+          "extracted": 20.0,
+          "status": "NORMALIZED",
+          "result": "INCORRECT"
+        },
+        "head_min_thk_mm": {
+          "ground_truth": 12.0,
+          "extracted": 22.0,
+          "status": "NORMALIZED",
+          "result": "INCORRECT"
+        },
+        "head_type": {
+          "ground_truth": "HEMISPHERICAL",
+          "extracted": "2:1 Elliptical",
+          "status": "NORMALIZED",
+          "result": "INCORRECT"
+        },
+        "nozzle_type": {
+          "ground_truth": "FLANGED",
+          "extracted": "Flanged",
+          "status": "NORMALIZED",
+          "result": "CORRECT"
+        },
+        "impact_tested": {
+          "ground_truth": "NO",
+          "extracted": "YES",
+          "status": "NORMALIZED",
+          "result": "INCORRECT"
+        },
+        "rt": {
+          "ground_truth": "FULL",
+          "extracted": "FULL",
+          "status": "NORMALIZED",
+          "result": "CORRECT"
+        },
+        "pwht": {
+          "ground_truth": "NO",
+          "extracted": "YES",
+          "status": "NORMALIZED",
+          "result": "INCORRECT"
+        },
+        "support_type": {
+          "ground_truth": "SKIRT",
+          "extracted": "Skirt",
+          "status": "NORMALIZED",
+          "result": "CORRECT"
+        },
+        "weight_tons_each": {
+          "ground_truth": 5.5,
+          "extracted": 15.5,
+          "status": "NORMALIZED",
+          "result": "INCORRECT"
+        },
+        "painting_external": {
+          "ground_truth": "SYSTEM A",
+          "extracted": "System 1",
+          "status": "NORMALIZED",
+          "result": "INCORRECT"
+        },
+        "painting_internal": {
+          "ground_truth": "NONE",
+          "extracted": "System 2",
+          "status": "NORMALIZED",
+          "result": "INCORRECT"
+        }
+      }
+    }
+  ]
+}

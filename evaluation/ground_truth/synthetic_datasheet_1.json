@@ -1,0 +1,22 @@
+{
+  "tag_no": "V-100",
+  "description": "SCRUBBER",
+  "ref_data_sheet": "MISSING",
+  "design_code": "ASME VIII DIV 1",
+  "moc": "304 SS",
+  "qty": 1,
+  "orientation": "VERTICAL",
+  "vessel_id_mm": 1500.0,
+  "vessel_tl_tl_length_mm": 4000.0,
+  "shell_min_thk_mm": 10.0,
+  "head_min_thk_mm": 12.0,
+  "head_type": "HEMISPHERICAL",
+  "nozzle_type": "FLANGED",
+  "impact_tested": "NO",
+  "rt": "FULL",
+  "pwht": "NO",
+  "support_type": "SKIRT",
+  "painting_external": "SYSTEM A",
+  "painting_internal": "NONE",
+  "weight_tons_each": 5.5
+}

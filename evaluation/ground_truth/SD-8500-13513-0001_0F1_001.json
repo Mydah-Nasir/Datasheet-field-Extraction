@@ -1,0 +1,22 @@
+{
+  "tag_no": "A85-D-0001A, A85-D-0001B",
+  "description": "WATER/OIL SEPARATOR (WOSEP)",
+  "ref_data_sheet": "MISSING",
+  "design_code": "ASME SEC. VIII DIV. 1, 2021 ED. + U STAMP",
+  "moc": "SA 516 Gr. 70N HIC",
+  "qty": 2,
+  "orientation": "AMBIGUOUS",
+  "vessel_id_mm": "MISSING",
+  "vessel_tl_tl_length_mm": "MISSING",
+  "shell_min_thk_mm": "MISSING",
+  "head_min_thk_mm": "MISSING",
+  "head_type": "2:1 ELLIPSOIDAL",
+  "nozzle_type": "AMBIGUOUS",
+  "impact_tested": "AMBIGUOUS",
+  "rt": "PER CODE",
+  "pwht": "PER CODE / 32-SAMSS-004",
+  "support_type": "Saddles",
+  "painting_external": "MISSING",
+  "painting_internal": "MISSING",
+  "weight_tons_each": "AMBIGUOUS"
+}
