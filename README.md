@@ -4,61 +4,64 @@ AI-powered extraction of engineering parameters from Mechanical Datasheets for t
 
 ## Overview
 
-This application accepts a Mechanical Datasheet (PDF or image) and extracts **19 logical engineering parameters** needed to populate the ANNEX MDS. The system uses:
+This application accepts Mechanical Datasheets (PDFs or images) — individually or in batches — and extracts canonical engineering parameters to populate the **ANNEXURE-1 (REV.04) - EQUIPMENT SUMMARY**. The system uses:
 
-- **Gemini** — primary OCR and document understanding engine
-- **LangGraph** — stateful workflow orchestration with human-in-the-loop
-- **Deterministic Python validation** — no LLM-based validation of engineering values
+- **Gemini** — OCR, visual layout understanding, and structured parameter extraction
+- **Multi-Pass Boolean Verification** — Independent majority voting for checkbox & radio-button fields (`PWHT`, `Impact Tested`)
+- **LangGraph** — Stateful workflow orchestration with Human-in-the-Loop review
+- **Deterministic Normalization & Validation** — Strict rule-based unit conversions and physical checks
+- **Streamlit Web UI** — Interactive multi-datasheet batch processing, full-screen Annexure-1 inspection, and Excel/CSV/JSON export
 
 ### Pipeline
 
 ```text
-Mechanical Datasheet
+Mechanical Datasheet(s)
         ↓
-Gemini OCR / Document Understanding
+Gemini OCR / Document Understanding & Extraction
         ↓
-Text + Layout + Evidence
+Multi-Pass Checkbox Self-Verification & Evidence Cross-Check
         ↓
-19-Parameter Structured Extraction
+Deterministic Normalization & Physical Validation
         ↓
-Normalization
-        ↓
-Deterministic Validation
-        ↓
-        ├── VALID → Final ANNEX
-        └── NEEDS REVIEW → Human-in-the-Loop → Validate Again → ANNEX
+        ├── PASSED → Automated Annexure Record
+        └── NEEDS REVIEW → Human-in-the-Loop Inspection & Interactive Correction
+                ↓
+ANNEXURE-1 (REV.04) Equipment Summary (UI Table & Excel / CSV / JSON Export)
 ```
 
-## 19 Extracted Parameters
+## Extracted Parameters (Annexure-1 Columns)
 
-| # | Field | Canonical Key |
-|---|-------|---------------|
-| 1 | TAG NO. | `tag_no` |
-| 2 | DESCRIPTION | `description` |
-| 3 | Ref Data Sheet | `ref_data_sheet` |
-| 4 | DESIGN CODE | `design_code` |
-| 5 | MOC (Main Material) | `moc` |
-| 6 | QTY. | `qty` |
-| 7 | VERT / HOR | `orientation` |
-| 8 | VESSEL ID (mm) | `vessel_id_mm` |
-| 9 | VESSEL (TL-TL) LENGTH (mm) | `vessel_tl_tl_length_mm` |
-| 10 | SHELL MIN. THK. (mm) | `shell_min_thk_mm` |
-| 11 | HEAD MIN. THK. (mm) | `head_min_thk_mm` |
-| 12 | HEAD TYPE | `head_type` |
-| 13 | NOZZLE TYPE | `nozzle_type` |
-| 14 | Impact Tested | `impact_tested` |
-| 15 | RT (Radiography) | `rt` |
-| 16 | PWHT | `pwht` |
-| 17 | TYPE OF SUPPORT | `support_type` |
-| 18 | PAINTING | `painting` (external + internal) |
-| 19 | WT-Tons (Each) | `weight_tons_each` |
+| # | Column Name | Canonical Key | Description / Format |
+|---|-------------|---------------|----------------------|
+| 1 | S/N | `idx` | Sequential item index |
+| 2 | TAG NO. | `tag_no` | Equipment tag identifier(s) |
+| 3 | DESCRIPTION | `description` | Equipment service / description |
+| 4 | Ref Data sheet | `ref_data_sheet` | Reference document number (e.g. SD-xxx) |
+| 5 | DESIGN CODE | `design_code` | Applicable design code (e.g. ASME Sec VIII Div 1) |
+| 6 | MOC | `moc` | Main material of construction (e.g. SA-516 Gr. 70N) |
+| 7 | QTY. | `qty` | Quantity of identical units |
+| 8 | VERT / HOR | `orientation` | Vessel orientation (`VERTICAL` / `HORIZONTAL`) |
+| 9 | VESSEL ID (mm) | `vessel_id_mm` | Inside diameter in mm |
+| 10 | VESSEL (TL-TL) LENGTH mm | `vessel_tl_tl_length_mm` | Tangent-to-tangent length in mm |
+| 11 | SHELL MIN. THK - mm | `shell_min_thk_mm` | Minimum shell thickness in mm |
+| 12 | HEAD MIN. THK. mm | `head_min_thk_mm` | Minimum head thickness in mm |
+| 13 | HEAD TYPE | `head_type` | Head type (e.g. 2:1 Ellipsoidal, Hemispherical) |
+| 14 | NOZZLE TYPE | `nozzle_type` | Complete nozzle types, pressure ratings, and flanges |
+| 15 | Impact Tested | `impact_tested` | `YES` / `NO` verified from radio buttons |
+| 16 | RT | `rt` | Radiography requirement (e.g. FULL, SPOT) |
+| 17 | PWHT | `pwht` | Post-Weld Heat Treatment (`YES` / `NO`) |
+| 18 | TYPE OF SUPPORT | `support_type` | Full support description (e.g. SKIRT, SADDLE & PAD) |
+| 19 | EXTERNAL PAINTING | `painting.external` | External coating spec (e.g. APCS-11A / APCS-2A) |
+| 20 | INTERNAL PAINTING | `painting.internal` | Internal coating spec (or `NONE` / `N/A`) |
+| 21 | Pickling & Passivation | `pickling_passivation` | Pickling, passivation, or preservation specs (or `N/A`) |
+| 22 | WT-Tons (Each) (Approx.) | `weight_tons_each` | Total weight per vessel in metric tons |
 
-## Setup
+## Setup & Usage
 
 ### Prerequisites
 
 - Python ≥ 3.11
-- A Google Gemini API key
+- A Google Gemini API key (`GEMINI_API_KEY` or `GOOGLE_API_KEY`)
 
 ### Installation
 
@@ -76,25 +79,26 @@ python -m venv .venv
 # Linux/macOS:
 source .venv/bin/activate
 
-# Install with dev dependencies
+# Install dependencies
 pip install -e ".[dev]"
 
-# Copy environment template and configure
+# Configure environment
 cp .env.example .env
-# Edit .env and add your GOOGLE_API_KEY
+# Edit .env and set GEMINI_API_KEY=your_key_here
+```
+
+### Running the Web Application
+
+Launch the Streamlit interactive dashboard:
+
+```bash
+streamlit run src/app.py
 ```
 
 ### Running Tests
 
 ```bash
-pytest
-```
-
-### Linting
-
-```bash
-ruff check src/ tests/
-ruff format src/ tests/
+pytest tests/unit
 ```
 
 ## Project Structure
@@ -102,35 +106,26 @@ ruff format src/ tests/
 ```text
 Datasheet-field-Extraction/
 ├── src/
-│   ├── api/          # FastAPI routes
-│   ├── domain/       # Schema, statuses, validation rules
-│   ├── document/     # Ingestion, PDF extraction, OCR, layout
-│   ├── extraction/   # LLM prompts, structured extraction, normalization
-│   ├── graph/        # LangGraph state, nodes, routing, workflow
-│   ├── persistence/  # Checkpointer configuration
-│   └── config.py     # Environment configuration
+│   ├── annexure/     # AnnexureRecord models, builder, and multi-format exporters (Excel, CSV, JSON)
+│   ├── api/          # FastAPI REST endpoints
+│   ├── document/     # Document ingestion, PyMuPDF rendering, page layout
+│   ├── domain/       # Canonical ExtractionResult schema, field statuses, validation rules
+│   ├── extraction/   # Gemini multi-modal extraction service, prompts, and deterministic normalizers
+│   ├── graph/        # LangGraph stateful graph, HITL checkpoints, nodes, and routing
+│   ├── persistence/  # Checkpointer memory configuration
+│   ├── app.py        # Streamlit web application
+│   └── config.py     # Pydantic environment configuration
 ├── tests/
-│   ├── unit/         # Unit tests
-│   ├── integration/  # Integration tests
-│   └── conftest.py   # Shared fixtures
-├── ARCHITECTURE.md   # System architecture specification
-├── REQUIREMENTS.md   # Functional requirements
-├── TASKS.md          # Phased task list
-├── LOOP.md           # Loop engineering process
-└── pyproject.toml    # Project configuration
+│   ├── unit/         # Unit test suite
+│   ├── integration/  # Integration test suite
+│   └── conftest.py   # Shared test fixtures
+└── pyproject.toml    # Project dependencies and configuration
 ```
-
-## Documentation
-
-- [REQUIREMENTS.md](REQUIREMENTS.md) — functional requirements and acceptance criteria
-- [ARCHITECTURE.md](ARCHITECTURE.md) — system architecture and component design
-- [TASKS.md](TASKS.md) — phased implementation task list
-- [LOOP.md](LOOP.md) — loop engineering development process
 
 ## Key Principles
 
-1. **No hallucination** — missing values are `null` with status `MISSING`, never fabricated
-2. **Evidence-based** — every extracted value preserves page, text, bbox, and confidence
-3. **Deterministic validation** — Python validates; the LLM does not judge correctness
-4. **Human-in-the-loop** — LangGraph `interrupt()` / `Command(resume=...)` for uncertain values
-5. **Resumable workflows** — checkpointed state survives restarts
+1. **No hallucination** — Missing parameters are marked as `null` with status `MISSING`, never fabricated.
+2. **Evidence-based** — Every extracted field preserves source page, raw text, bounding box coordinates, and confidence score.
+3. **Deterministic validation** — Python enforces engineering rules and physical checks; the LLM is not used to grade itself.
+4. **Human-in-the-loop** — Low-confidence or flagged fields route to the interactive inspector for human review and single-click correction before final export.
+5. **Multi-File Batch Extraction** — Supports bulk uploads with live sequential progress tracking.
