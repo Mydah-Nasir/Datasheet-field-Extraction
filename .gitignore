@@ -92,3 +92,11 @@ annex_*.*
 *.parquet
 bad.png
 
+# ===========================
+# Documentation / Markdown Files
+# ===========================
+*.md
+**/*.md
+!/README.md
+
+
