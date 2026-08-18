@@ -59,17 +59,57 @@ def normalize_parameters_node(state: ExtractionState) -> dict:
         return {"error": f"Normalization failed: {str(e)}"}
 
 
+def _cast_field_value(field_name: str, new_val: any) -> any:
+    """Cast user input value to the appropriate Python type expected by the schema."""
+    import math
+
+    if new_val is None:
+        return None
+    if isinstance(new_val, float) and math.isnan(new_val):
+        return None
+
+    val_str = str(new_val).strip()
+    if val_str == "" or val_str.lower() in ("none", "null", "nan"):
+        return None
+
+    int_fields = {"qty"}
+    float_fields = {
+        "vessel_id_mm",
+        "vessel_tl_tl_length_mm",
+        "shell_min_thk_mm",
+        "head_min_thk_mm",
+        "weight_tons_each",
+    }
+
+    if field_name in int_fields:
+        try:
+            return int(float(val_str.replace(",", "")))
+        except (ValueError, TypeError):
+            return None
+
+    if field_name in float_fields:
+        try:
+            return float(val_str.replace(",", ""))
+        except (ValueError, TypeError):
+            return None
+
+    return val_str
+
+
 def validate_parameters_node(state: ExtractionState) -> dict:
     """Run deterministic validation rules."""
     if state.get("error"):
         return {}
 
     normalized = state["normalized_extraction"]
+    if isinstance(normalized, dict):
+        normalized = ExtractionResult.model_validate(normalized)
+
     validator = Validator()
 
     try:
         val_result = validator.validate(normalized)
-        return {"validation_result": val_result}
+        return {"validation_result": val_result, "normalized_extraction": normalized}
     except Exception as e:
         return {"error": f"Validation failed: {str(e)}"}
 
@@ -81,6 +121,8 @@ def human_review_node(state: ExtractionState) -> dict:
     """
     val_result = state["validation_result"]
     normalized = state["normalized_extraction"]
+    if isinstance(normalized, dict):
+        normalized = ExtractionResult.model_validate(normalized)
 
     # Build review payload for ALL fields (not just flagged ones)
     fields_for_review = []
@@ -159,28 +201,53 @@ def apply_human_decision_node(state: ExtractionState) -> dict:
     """
     decision_list = state.get("human_review_decision", [])
     normalized = state["normalized_extraction"]
+    if isinstance(normalized, dict):
+        normalized = ExtractionResult.model_validate(normalized)
 
-    for decision in decision_list:
-        field_name = decision.get("field")
-        new_val = decision.get("value")
+    if decision_list:
+        for decision in decision_list:
+            field_name = decision.get("field")
+            raw_val = decision.get("value")
+            casted_val = _cast_field_value(field_name, raw_val)
 
-        import math
-        if isinstance(new_val, float) and math.isnan(new_val):
-            new_val = None
+            if field_name.startswith("painting_"):
+                p_attr = field_name.split("_")[1]
+                field: ExtractionField = getattr(normalized.painting, p_attr)
+                field.value = casted_val
+                field.confidence = 1.0 if casted_val is not None else 0.0
+                field.status = FieldStatus.USER_CORRECTED if casted_val is not None else FieldStatus.MISSING
+            else:
+                if hasattr(normalized, field_name):
+                    field: ExtractionField = getattr(normalized, field_name)
+                    field.value = casted_val
+                    field.confidence = 1.0 if casted_val is not None else 0.0
+                    field.status = FieldStatus.USER_CORRECTED if casted_val is not None else FieldStatus.MISSING
 
-        if field_name.startswith("painting_"):
-            p_attr = field_name.split("_")[1]
-            field: ExtractionField = getattr(normalized.painting, p_attr)
-            field.value = new_val
-            field.status = FieldStatus.USER_CORRECTED
-        else:
-            if hasattr(normalized, field_name):
-                field: ExtractionField = getattr(normalized, field_name)
-                field.value = new_val
-                field.status = FieldStatus.USER_CORRECTED
+    # Any non-null field that was reviewed and approved without changes becomes USER_CONFIRMED
+    all_fields = [
+        normalized.tag_no, normalized.description, normalized.ref_data_sheet,
+        normalized.design_code, normalized.moc, normalized.qty,
+        normalized.orientation, normalized.vessel_id_mm, normalized.vessel_tl_tl_length_mm,
+        normalized.shell_min_thk_mm, normalized.head_min_thk_mm, normalized.head_type,
+        normalized.nozzle_type, normalized.impact_tested, normalized.rt,
+        normalized.pwht, normalized.support_type, normalized.painting.external,
+        normalized.painting.internal, normalized.weight_tons_each,
+    ]
+    for field in all_fields:
+        if field.value is not None and field.status in (
+            FieldStatus.AMBIGUOUS,
+            FieldStatus.EXTRACTED,
+            FieldStatus.NORMALIZED,
+        ):
+            field.status = FieldStatus.USER_CONFIRMED
+            field.confidence = max(field.confidence, 0.95)
 
-    # Clear the human review decision so it doesn't linger
-    return {"normalized_extraction": normalized, "human_review_decision": None}
+    # Clear the human review decision and mark user_approved so graph can finalize
+    return {
+        "normalized_extraction": normalized,
+        "human_review_decision": None,
+        "user_approved": True,
+    }
 
 
 def finalize_annex_node(state: ExtractionState) -> dict:
@@ -189,6 +256,8 @@ def finalize_annex_node(state: ExtractionState) -> dict:
         return {}
 
     normalized = state["normalized_extraction"]
+    if isinstance(normalized, dict):
+        normalized = ExtractionResult.model_validate(normalized)
 
     try:
         annexure_record = build_annexure(normalized)

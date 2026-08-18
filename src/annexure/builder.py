@@ -56,6 +56,9 @@ def build_annexure(result: ExtractionResult) -> AnnexureRecord:
     """Build a final AnnexureRecord from a validated ExtractionResult."""
     validate_for_export(result)
 
+    pickling_field = getattr(result, "pickling_passivation", None)
+    pickling_val = pickling_field.value if (pickling_field and pickling_field.value) else "N/A"
+
     return AnnexureRecord(
         tag_no=result.tag_no.value,
         description=result.description.value,
@@ -76,6 +79,7 @@ def build_annexure(result: ExtractionResult) -> AnnexureRecord:
         support_type=result.support_type.value,
         painting_external=result.painting.external.value,
         painting_internal=result.painting.internal.value,
+        pickling_passivation=pickling_val,
         weight_tons_each=result.weight_tons_each.value,
     )
 

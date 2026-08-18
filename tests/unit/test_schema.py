@@ -167,11 +167,12 @@ class TestExtractionResult:
         assert result.vessel_id_mm.value == 5800.0
         assert result.painting.external.value == "external paint"
 
-        # Check parameter count (19 fields exactly)
+        # Check parameter count (20 fields including pickling_passivation)
         fields = list(ExtractionResult.model_fields.keys())
-        assert len(fields) == 19
+        assert len(fields) == 20
         assert "painting" in fields
         assert "tag_no" in fields
+        assert "pickling_passivation" in fields
 
     def test_missing_values(self):
         result = ExtractionResult(

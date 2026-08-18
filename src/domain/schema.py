@@ -100,5 +100,10 @@ class ExtractionResult(BaseModel):
     support_type: ExtractionField[str]
     # 18. PAINTING (Contains external and internal)
     painting: PaintingField
-    # 19. WT-Tons (Each) (Approx.)
+    # 19. Pickling & Passivation / Preservation
+    pickling_passivation: ExtractionField[str] = Field(
+        default_factory=lambda: ExtractionField(value="N/A", status=FieldStatus.NORMALIZED, confidence=1.0),
+        description="Pickling & Passivation / Preservation specification (e.g., 'N/A', 'Required', specific spec, or N/A)",
+    )
+    # 20. WT-Tons (Each) (Approx.)
     weight_tons_each: ExtractionField[float]

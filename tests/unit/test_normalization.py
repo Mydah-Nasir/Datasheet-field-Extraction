@@ -155,3 +155,106 @@ def test_idempotence(base_extraction):
 
     # Should stay NORMALIZED
     assert res2.tag_no.status == FieldStatus.NORMALIZED
+
+
+def test_normalize_head_min_thickness(base_extraction):
+    """Test that HEAD TH. 29 (MIN. 22.88) extracts the MINIMUM thickness (22.88) even if LLM provided nominal 29."""
+    from src.domain.schema import Evidence
+    normalizer = Normalizer()
+
+    # Scenario 1: LLM extracted nominal 29.0, but evidence has MIN. 22.88
+    base_extraction.head_min_thk_mm.value = 29.0
+    base_extraction.head_min_thk_mm.status = FieldStatus.EXTRACTED
+    base_extraction.head_min_thk_mm.evidence = [
+        Evidence(page=3, text="2:1 ELLIP. HEAD TH. 29 (MIN. 22.88) (BOTH HEADS)")
+    ]
+
+    res = normalizer.normalize(base_extraction)
+    assert res.head_min_thk_mm.value == 22.88
+    assert res.head_min_thk_mm.status == FieldStatus.NORMALIZED
+
+    # Scenario 2: LLM extracted raw string "HEAD TH. 29 (MIN. 22.88)"
+    base_extraction.head_min_thk_mm.value = "HEAD TH. 29 (MIN. 22.88)"
+    base_extraction.head_min_thk_mm.status = FieldStatus.EXTRACTED
+    base_extraction.head_min_thk_mm.evidence = []
+
+    res2 = normalizer.normalize(base_extraction)
+    assert res2.head_min_thk_mm.value == 22.88
+    assert res2.head_min_thk_mm.status == FieldStatus.NORMALIZED
+
+    # Scenario 3: Standard single thickness without MIN
+    base_extraction.shell_min_thk_mm.value = 29.0
+    base_extraction.shell_min_thk_mm.status = FieldStatus.EXTRACTED
+    base_extraction.shell_min_thk_mm.evidence = [
+        Evidence(page=3, text="54870 (T.L. - T.L.) - TH. 29")
+    ]
+
+    res3 = normalizer.normalize(base_extraction)
+    assert res3.shell_min_thk_mm.value == 29.0
+    assert res3.shell_min_thk_mm.status == FieldStatus.NORMALIZED
+
+
+def test_boolean_evidence_contradiction():
+    """Test radio button pattern matching in _check_evidence_contradiction."""
+    from src.domain.schema import Evidence, ExtractionField
+    from src.extraction.service import GeminiExtractionService
+
+    # 1. ◯ YES ◉ NO with value YES -> should suggest NO
+    field_impact = ExtractionField[str](
+        value="YES",
+        status=FieldStatus.EXTRACTED,
+        confidence=0.8,
+        evidence=[Evidence(page=2, text="IMPACT TESTING (IT): ◯ YES ◉ NO ☑ CODE")]
+    )
+    suggested = GeminiExtractionService._check_evidence_contradiction(field_impact)
+    assert suggested == "NO"
+
+    # 2. ◉ YES ◯ NO with value NO -> should suggest YES
+    field_pwht = ExtractionField[str](
+        value="NO",
+        status=FieldStatus.EXTRACTED,
+        confidence=0.8,
+        evidence=[Evidence(page=2, text="PWHT: ◉ YES ◯ NO ☐ CODE ☑ SERVICE")]
+    )
+    suggested_pwht = GeminiExtractionService._check_evidence_contradiction(field_pwht)
+    assert suggested_pwht == "YES"
+
+    # 3. ◯ YES ◉ NO with value NO -> no contradiction (returns None)
+    field_correct = ExtractionField[str](
+        value="NO",
+        status=FieldStatus.EXTRACTED,
+        confidence=0.9,
+        evidence=[Evidence(page=2, text="IMPACT TESTING (IT): ◯ YES ◉ NO ☑ CODE")],
+    )
+    assert GeminiExtractionService._check_evidence_contradiction(field_correct) is None
+
+
+def test_normalize_nozzle_type(base_extraction):
+    """Test nozzle_type normalization preserving full specifications, pressure classes, and standards."""
+    normalizer = Normalizer()
+
+    # Scenario 1: Complete specification with pressure classes, designations, and standards
+    base_extraction.nozzle_type.value = "150# RFSRWN, 300# RFSRWN, 150# RFLWN, 300# RFLWN, B16.47 SERIES A"
+    base_extraction.nozzle_type.status = FieldStatus.EXTRACTED
+
+    res = normalizer.normalize(base_extraction)
+    assert res.nozzle_type.value == "150# RFSRWN, 300# RFSRWN, 150# RFLWN, 300# RFLWN, B16.47 SERIES A"
+    assert res.nozzle_type.status == FieldStatus.NORMALIZED
+
+    # Scenario 2: Whitespace and separator noise (semicolons, newlines, extra spaces)
+    base_extraction.nozzle_type.value = "  150#   RFSRWN ;  300# RFSRWN \n 150# RFLWN , 300# RFLWN "
+    base_extraction.nozzle_type.status = FieldStatus.EXTRACTED
+
+    res2 = normalizer.normalize(base_extraction)
+    assert res2.nozzle_type.value == "150# RFSRWN, 300# RFSRWN, 150# RFLWN, 300# RFLWN"
+    assert res2.nozzle_type.status == FieldStatus.NORMALIZED
+
+    # Scenario 3: Deduplication of duplicate entries across multiple rows
+    base_extraction.nozzle_type.value = "150# RFSRWN, 150# RFSRWN, 300# RFLWN, 150# RFSRWN, B16.47 SERIES A"
+    base_extraction.nozzle_type.status = FieldStatus.EXTRACTED
+
+    res3 = normalizer.normalize(base_extraction)
+    assert res3.nozzle_type.value == "150# RFSRWN, 300# RFLWN, B16.47 SERIES A"
+    assert res3.nozzle_type.status == FieldStatus.NORMALIZED
+
+

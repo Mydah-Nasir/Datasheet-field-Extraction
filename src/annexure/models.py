@@ -30,4 +30,5 @@ class AnnexureRecord(BaseModel):
     support_type: str = Field(description="TYPE OF SUPPORT")
     painting_external: str = Field(description="EXTERNAL PAINTING")
     painting_internal: str = Field(description="INTERNAL PAINTING")
+    pickling_passivation: str = Field(default="N/A", description="Pickling & Passivation")
     weight_tons_each: float = Field(description="WT-Tons (Each) (Approx.)")

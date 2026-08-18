@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import time
 from tenacity import retry, stop_after_attempt, wait_exponential
 
@@ -23,28 +24,73 @@ from src.extraction.prompt import EXTRACTION_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
 
-# Second-pass prompt for verifying boolean checkbox fields
-BOOLEAN_VERIFICATION_PROMPT = """You are a quality inspector verifying checkbox values on a mechanical datasheet.
+# Second-pass prompt for verifying boolean checkbox fields.
+# This prompt is deliberately long and repetitive to force the model to
+# reason carefully about each checkbox row independently.
+BOOLEAN_VERIFICATION_PROMPT = """You are a precision inspector verifying checkbox and radio-button values on an engineering mechanical datasheet.
 
-TASK: On the datasheet page that contains design conditions, there is a section with multiple YES/NO checkboxes.
-These checkboxes are arranged in SEPARATE ROWS. Each row has a LABEL and a MARKED checkbox (YES or NO).
+CRITICAL CONTEXT:
+Engineering datasheets have a section (often titled "DESIGN CONDITIONS" or similar) that contains
+multiple YES/NO selections arranged in SEPARATE, INDEPENDENT rows. Each row is a DIFFERENT field.
+You MUST read each row's selection INDEPENDENTLY. The value of one row tells you NOTHING about another row.
 
-Common fields in this section include (but are not limited to):
+COMMON ROWS (each is independent):
 - PWHT (Post Weld Heat Treatment)
-- IMPACT TESTING (IT)
-- WET H2S / SOUR SERVICE
-- RADIOGRAPHY
+- IMPACT TESTING (or "IT" or "IMPACT TEST")
+- WET H2S / SOUR SERVICE (or "WET SOUR")
+- RADIOGRAPHY (or "RT")
+- STRESS RELIEF
 
-STEP 1: Find the design conditions section on the datasheet.
-STEP 2: List EVERY checkbox row you see, with its label and which box (YES or NO) is marked.
-STEP 3: Based on your listing, report the values.
+CRITICAL: RADIO BUTTONS VS CHECKBOXES
+Many datasheets (e.g. Saudi Aramco, JGC) use circular RADIO BUTTONS for the YES/NO options:
+- `◯` = EMPTY / UNSELECTED circle.
+- `◉` (or circle with a solid black dot/bullet in center, or filled circle) = SELECTED / MARKED.
+- `☐` = UNCHECKED square box.
+- `☑` / `☒` = CHECKED square box.
 
-WARNING: "WET SOUR: YES" does NOT mean "IMPACT TESTING: YES". These are DIFFERENT rows.
-WARNING: "PWHT: YES" does NOT mean "IMPACT TESTING: YES". These are DIFFERENT rows.
+MANDATORY PROCEDURE — Follow these steps IN ORDER:
 
-Respond in this exact JSON format:
-{"all_checkboxes": [{"label": "...", "value": "YES or NO"}], "impact_tested": "YES or NO", "pwht": "YES or NO"}"""
+STEP 1: Locate the design conditions / checkbox section on the datasheet.
+STEP 2: Identify the column layout above the YES/NO options (typically LEFT=YES, RIGHT=NO).
+STEP 3: For EACH row in that section:
+   a) Read the LABEL text on the left side of the row (e.g., "PWHT", "IMPACT TESTING (IT):", etc.)
+   b) Trace HORIZONTALLY across THAT ROW ONLY from the label to the YES and NO circles/boxes
+   c) Identify the symbol at YES: is it `◯` (empty circle) or `◉` (circle with dot)?
+   d) Identify the symbol at NO: is it `◯` (empty circle) or `◉` (circle with dot)?
+   e) Note: If you see `◯ YES` and `◉ NO`, then NO is selected!
+   f) Note: If you see `◉ YES` and `◯ NO`, then YES is selected!
+   g) Note: A square checkbox like `☑ CODE` on the same row does NOT mean "YES" to impact testing.
+   h) Write it out as: "Row: [LABEL] → YES is [◯ empty / ◉ dot], NO is [◯ empty / ◉ dot] → Winner is [YES or NO]"
+STEP 4: Answer the specific questions below.
 
+ABSOLUTE RULES:
+- Each row is COMPLETELY INDEPENDENT.
+- "PWHT: YES" does NOT imply "IMPACT TESTING: YES". On many vessels, PWHT is YES but IMPACT TESTING is NO.
+- "WET SOUR: YES" does NOT imply "IMPACT TESTING: YES".
+- If the dot is inside the NO circle (`◉ NO`), then impact_tested = "NO".
+- If the dot is inside the YES circle (`◉ YES`), then impact_tested = "YES".
+- Do NOT mistake the square `☑ CODE` checkbox as "YES".
+
+Respond ONLY in this exact JSON format:
+{
+  "column_layout": "describe which column is YES and which is NO (e.g., LEFT=YES, RIGHT=NO)",
+  "step_by_step_rows": [
+    {
+      "row_label": "exact label text",
+      "yes_symbol": "◯ empty or ◉ dot or other",
+      "no_symbol": "◯ empty or ◉ dot or other",
+      "marked_column": "YES or NO",
+      "mark_description": "describe exact visual appearance (e.g., ◯ empty circle before YES, ◉ circle with black center dot before NO, ☑ checked box for CODE)"
+    }
+  ],
+  "impact_tested": "YES or NO",
+  "impact_tested_reasoning": "I traced the IMPACT TESTING row horizontally: YES has [symbol], NO has [symbol], so impact_tested is [YES/NO]",
+  "pwht": "YES or NO",
+  "pwht_reasoning": "I traced the PWHT row horizontally: YES has [symbol], NO has [symbol], so pwht is [YES/NO]"
+}"""
+
+# Number of independent verification calls for majority voting
+_BOOLEAN_VERIFY_VOTES = 3
 
 
 class GeminiExtractionService:
@@ -137,8 +183,10 @@ class GeminiExtractionService:
             else:
                 result = ExtractionResult.model_validate_json(response.text)
 
-            # 5. Second-pass: verify boolean checkbox fields (impact_tested, pwht)
-            # The model frequently confuses adjacent checkboxes on engineering drawings
+            # 5. Multi-pass verification of boolean checkbox fields
+            # The model frequently confuses adjacent checkboxes on engineering drawings.
+            # We run multiple independent verification calls and use majority voting
+            # combined with evidence cross-checking.
             result = self._verify_boolean_fields(uploaded_file, result)
 
             duration = time.time() - start_time
@@ -179,17 +227,62 @@ class GeminiExtractionService:
                         f"Failed to clean up Gemini file {uploaded_file.name}: {cleanup_err}"
                     )
 
-    def _verify_boolean_fields(
-        self, uploaded_file, result: ExtractionResult
-    ) -> ExtractionResult:
-        """Run a focused second-pass to verify boolean checkbox fields.
+    @staticmethod
+    def _check_evidence_contradiction(field) -> str | None:
+        """Check if a boolean field's evidence text contradicts its extracted value.
 
-        Vision models frequently confuse adjacent checkboxes on dense engineering
-        drawings (e.g., IMPACT TESTING vs PWHT vs WET SOUR). This method makes
-        a separate, focused API call to double-check those specific fields.
+        Returns the value the evidence suggests ('YES' or 'NO'), or None if inconclusive.
         """
+        if not field.evidence or not field.value:
+            return None
+
+        value_upper = field.value.strip().upper()
+        # Combine all evidence text
+        evidence_text = " ".join(e.text for e in field.evidence)
+
+        import re
+
+        # Strict radio-button / checkbox pair patterns
+        # 1. (empty YES) followed by (selected NO) -> unequivocally NO
+        no_pair_pattern = (
+            r"(?:◯|○|□|\[\s*\]|\(\s*\))\s*YES\b[^\n\r]*(?:◉|●|⦿|☑|☒|\[[xX•*]\]|\([•*xX]\))\s*NO\b"
+        )
+        # 2. (selected YES) followed by (empty NO) -> unequivocally YES
+        yes_pair_pattern = (
+            r"(?:◉|●|⦿|☑|☒|\[[xX•*]\]|\([•*xX]\))\s*YES\b[^\n\r]*(?:◯|○|□|\[\s*\]|\(\s*\))\s*NO\b"
+        )
+
+        is_no_pair = bool(re.search(no_pair_pattern, evidence_text, re.IGNORECASE))
+        is_yes_pair = bool(re.search(yes_pair_pattern, evidence_text, re.IGNORECASE))
+
+        if is_no_pair and not is_yes_pair:
+            return "NO" if value_upper != "NO" else None
+        if is_yes_pair and not is_no_pair:
+            return "YES" if value_upper != "YES" else None
+
+        # Direct explicit markers (e.g. "◉ NO", "☑ NO", "IMPACT TEST: NO")
+        no_direct = (
+            r"(?:(?:◉|●|⦿|☑|☒|\[[xX•*]\]|\([•*xX]\))\s*NO\b|\bNO\s*(?:◉|●|⦿|☑|☒|\[[xX•*]\]|\([•*xX]\))|(?<!\()\b(?:IT|IMPACT\s*TEST(?:ING|ED)?|PWHT)\s*[:=\-]\s*NO\b)"
+        )
+        yes_direct = (
+            r"(?:(?:◉|●|⦿|☑|☒|\[[xX•*]\]|\([•*xX]\))\s*YES\b|\bYES\s*(?:◉|●|⦿|☑|☒|\[[xX•*]\]|\([•*xX]\))|(?<!\()\b(?:IT|IMPACT\s*TEST(?:ING|ED)?|PWHT)\s*[:=\-]\s*YES\b)"
+        )
+
+        evidence_suggests_no = bool(re.search(no_direct, evidence_text, re.IGNORECASE))
+        evidence_suggests_yes = bool(re.search(yes_direct, evidence_text, re.IGNORECASE))
+
+        if value_upper == "YES" and evidence_suggests_no and not evidence_suggests_yes:
+            return "NO"
+        if value_upper == "NO" and evidence_suggests_yes and not evidence_suggests_no:
+            return "YES"
+
+        return None
+
+    def _run_single_verification(self, uploaded_file, vote_index: int) -> dict | None:
+        """Run a single boolean verification call. Returns parsed dict or None on failure."""
         try:
-            logger.info("Running second-pass boolean field verification...")
+            # Use slightly varied temperature for vote diversity (0.0, 0.1, 0.2)
+            temp = min(vote_index * 0.1, 0.3)
             verify_response = self.client.models.generate_content(
                 model=self.model_name,
                 contents=[
@@ -198,46 +291,259 @@ class GeminiExtractionService:
                 ],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
-                    temperature=0.0,
+                    temperature=temp,
                     thinking_config=types.ThinkingConfig(
-                        thinking_budget=2048,
+                        thinking_budget=4096,
                     ),
                 ),
             )
-
             if verify_response.text:
-                verified = json.loads(verify_response.text)
-                logger.info(f"Boolean verification result: {verified}")
+                raw_text = verify_response.text.strip()
+                parsed = None
+                try:
+                    parsed = json.loads(raw_text)
+                except Exception:
+                    # If direct parsing fails due to markdown wrapping or extra data, use raw_decode
+                    start_idx = raw_text.find("{")
+                    while start_idx != -1:
+                        try:
+                            data, _ = json.JSONDecoder().raw_decode(raw_text[start_idx:])
+                            if isinstance(data, dict):
+                                parsed = data
+                                break
+                        except Exception:
+                            pass
+                        start_idx = raw_text.find("{", start_idx + 1)
 
-                # Compare and correct impact_tested
-                verified_impact = verified.get("impact_tested", "").strip().upper()
-                current_impact = (result.impact_tested.value or "").strip().upper()
-
-                if verified_impact in ("YES", "NO") and verified_impact != current_impact:
-                    logger.warning(
-                        f"CORRECTING impact_tested: '{current_impact}' -> '{verified_impact}' "
-                        f"(second-pass verification disagreed with first-pass)"
+                if isinstance(parsed, dict):
+                    logger.info(
+                        f"Boolean verification vote {vote_index + 1}: "
+                        f"impact_tested={parsed.get('impact_tested')}, "
+                        f"pwht={parsed.get('pwht')}, "
+                        f"reasoning={parsed.get('impact_tested_reasoning', 'N/A')}"
                     )
-                    result.impact_tested.value = verified_impact
-                    result.impact_tested.confidence = 0.6  # Lower confidence since passes disagreed
-                    result.impact_tested.status = FieldStatus.EXTRACTED
+                    return parsed
+        except Exception as e:
+            logger.warning(f"Boolean verification vote {vote_index + 1} failed: {e}")
+        return None
 
-                # Compare and correct pwht
-                verified_pwht = verified.get("pwht", "").strip().upper()
-                current_pwht = (result.pwht.value or "").strip().upper()
+    @staticmethod
+    def _majority_vote(votes: list[str]) -> tuple[str, float]:
+        """Compute majority vote from a list of YES/NO strings.
 
-                if verified_pwht in ("YES", "NO") and verified_pwht != current_pwht:
-                    logger.warning(
-                        f"CORRECTING pwht: '{current_pwht}' -> '{verified_pwht}' "
-                        f"(second-pass verification disagreed with first-pass)"
-                    )
-                    result.pwht.value = verified_pwht
-                    result.pwht.confidence = 0.6
-                    result.pwht.status = FieldStatus.EXTRACTED
+        Returns (winner, agreement_ratio).
+        """
+        if not votes:
+            return ("", 0.0)
+        from collections import Counter
+        counts = Counter(str(v).strip().upper() for v in votes if v and str(v).strip().upper() in ("YES", "NO"))
+        if not counts:
+            return ("", 0.0)
+        winner, winner_count = counts.most_common(1)[0]
+        agreement = winner_count / len(votes)
+        return (winner, agreement)
+
+    def _verify_boolean_fields(
+        self, uploaded_file, result: ExtractionResult
+    ) -> ExtractionResult:
+        """Run multi-pass verification on impact_tested and pwht.
+
+        1. Checks evidence text for direct contradictions with extracted value
+        2. Runs 3 independent targeted verification calls
+        3. Uses majority vote (2/3 or 3/3) to resolve true value
+        4. Adjusts confidence: boost if unanimous, lower to trigger review if split
+        """
+        try:
+            logger.info(
+                f"Running multi-pass boolean verification "
+                f"({_BOOLEAN_VERIFY_VOTES} votes)..."
+            )
+
+            # --- Step 1: Evidence cross-check ---
+            evidence_suggests_impact = self._check_evidence_contradiction(
+                result.impact_tested
+            )
+            evidence_suggests_pwht = self._check_evidence_contradiction(result.pwht)
+
+            if evidence_suggests_impact:
+                logger.warning(
+                    f"Evidence cross-check: impact_tested evidence text suggests "
+                    f"'{evidence_suggests_impact}' but extracted value is "
+                    f"'{result.impact_tested.value}'"
+                )
+            if evidence_suggests_pwht:
+                logger.warning(
+                    f"Evidence cross-check: pwht evidence text suggests "
+                    f"'{evidence_suggests_pwht}' but extracted value is "
+                    f"'{result.pwht.value}'"
+                )
+
+            # --- Step 2: Run N independent verification calls ---
+            impact_votes: list[str] = []
+            pwht_votes: list[str] = []
+            all_reasoning: list[str] = []
+
+            for i in range(_BOOLEAN_VERIFY_VOTES):
+                parsed = self._run_single_verification(uploaded_file, i)
+                if parsed and isinstance(parsed, dict):
+                    raw_impact = parsed.get("impact_tested")
+                    raw_pwht = parsed.get("pwht")
+                    impact_val = str(raw_impact).strip().upper() if raw_impact is not None else ""
+                    pwht_val = str(raw_pwht).strip().upper() if raw_pwht is not None else ""
+                    if impact_val in ("YES", "NO"):
+                        impact_votes.append(impact_val)
+                    if pwht_val in ("YES", "NO"):
+                        pwht_votes.append(pwht_val)
+                    # Collect reasoning for logging
+                    reasoning = parsed.get("impact_tested_reasoning", "")
+                    if reasoning:
+                        all_reasoning.append(f"Vote {i+1}: {reasoning}")
+
+            logger.info(
+                f"Verification votes — impact_tested: {impact_votes}, pwht: {pwht_votes}"
+            )
+
+            # --- Step 3: Majority vote ---
+            impact_winner, impact_agreement = self._majority_vote(impact_votes)
+            pwht_winner, pwht_agreement = self._majority_vote(pwht_votes)
+
+            # --- Step 4: Resolve impact_tested ---
+            current_impact = str(result.impact_tested.value or "").strip().upper()
+            result = self._resolve_boolean_field(
+                result=result,
+                field_name="impact_tested",
+                current_value=current_impact,
+                vote_winner=impact_winner,
+                vote_agreement=impact_agreement,
+                evidence_suggestion=evidence_suggests_impact,
+                vote_count=len(impact_votes),
+                reasoning_log="; ".join(all_reasoning),
+            )
+
+            # --- Step 5: Resolve pwht ---
+            current_pwht = str(result.pwht.value or "").strip().upper()
+            result = self._resolve_boolean_field(
+                result=result,
+                field_name="pwht",
+                current_value=current_pwht,
+                vote_winner=pwht_winner,
+                vote_agreement=pwht_agreement,
+                evidence_suggestion=evidence_suggests_pwht,
+                vote_count=len(pwht_votes),
+                reasoning_log="",
+            )
 
         except Exception as e:
-            # If verification fails, keep original results — don't crash
-            logger.warning(f"Boolean verification failed (keeping original values): {e}")
+            # If verification fails entirely, lower confidence on boolean fields
+            # to force human review rather than silently passing wrong values
+            logger.warning(
+                f"Boolean verification failed — lowering confidence to force "
+                f"human review: {e}"
+            )
+            result.impact_tested.confidence = min(result.impact_tested.confidence, 0.5)
+            result.pwht.confidence = min(result.pwht.confidence, 0.5)
+
+        return result
+
+    @staticmethod
+    def _resolve_boolean_field(
+        result: ExtractionResult,
+        field_name: str,
+        current_value: str,
+        vote_winner: str,
+        vote_agreement: float,
+        evidence_suggestion: str | None,
+        vote_count: int,
+        reasoning_log: str,
+    ) -> ExtractionResult:
+        """Resolve a single boolean field using evidence + majority vote.
+
+        Decision matrix:
+        - If evidence cross-check AND majority vote both disagree with first-pass → correct the value
+        - If only majority vote disagrees (unanimous) → correct the value
+        - If majority vote disagrees (not unanimous) → correct but flag as AMBIGUOUS
+        - If evidence cross-check disagrees but votes agree with first-pass → flag as AMBIGUOUS
+        - If everything agrees → keep value, maintain confidence
+        """
+        field = getattr(result, field_name)
+
+        if not vote_winner or not current_value:
+            # Not enough data to verify — lower confidence to be safe
+            if current_value:
+                field.confidence = min(field.confidence, 0.5)
+                logger.warning(
+                    f"Insufficient verification data for {field_name} "
+                    f"(got {vote_count} valid votes) — lowering confidence"
+                )
+            return result
+
+        votes_agree_with_first_pass = (vote_winner == current_value)
+        evidence_disagrees = (evidence_suggestion is not None and
+                              evidence_suggestion != current_value)
+
+        if votes_agree_with_first_pass and not evidence_disagrees:
+            # All signals agree — high confidence in original value
+            # Boost confidence slightly if unanimous votes confirm
+            if vote_agreement == 1.0 and vote_count >= 2:
+                field.confidence = min(field.confidence + 0.05, 1.0)
+                logger.info(
+                    f"{field_name}: All {vote_count} verification votes "
+                    f"unanimously confirm '{current_value}'"
+                )
+            return result
+
+        if not votes_agree_with_first_pass:
+            # Majority vote disagrees with first-pass extraction
+            if evidence_disagrees:
+                # STRONGEST signal: both evidence AND votes disagree → definitely correct
+                # Both independent signals (text evidence + multi-pass visual verification)
+                # agree on the correction — this is the highest-confidence correction.
+                logger.info(
+                    f"Auto-correcting {field_name}: '{current_value}' → '{vote_winner}' "
+                    f"(evidence cross-check AND {vote_count} verification votes "
+                    f"({vote_agreement:.0%} agreement) both disagree with first-pass)"
+                )
+                field.value = vote_winner
+                field.confidence = 0.90
+                field.status = FieldStatus.EXTRACTED
+            elif vote_agreement >= 1.0:
+                # Unanimous vote disagreement — strong correction signal
+                logger.info(
+                    f"Auto-correcting {field_name}: '{current_value}' → '{vote_winner}' "
+                    f"(all {vote_count} verification votes unanimously disagree "
+                    f"with first-pass). {reasoning_log}"
+                )
+                field.value = vote_winner
+                field.confidence = 0.85
+                field.status = FieldStatus.EXTRACTED
+            elif vote_agreement >= 0.67:
+                # Majority (but not unanimous) vote disagreement — correct but mild flag
+                logger.info(
+                    f"Auto-correcting {field_name}: '{current_value}' → '{vote_winner}' "
+                    f"(majority {vote_agreement:.0%} of {vote_count} votes disagree "
+                    f"with first-pass). {reasoning_log}"
+                )
+                field.value = vote_winner
+                field.confidence = 0.70
+                field.status = FieldStatus.EXTRACTED
+            else:
+                # Split vote — no clear winner, flag as ambiguous
+                logger.info(
+                    f"Flagging {field_name} as AMBIGUOUS: votes split "
+                    f"({vote_agreement:.0%} agreement on '{vote_winner}' vs "
+                    f"first-pass '{current_value}') for human review."
+                )
+                field.confidence = 0.30
+                field.status = FieldStatus.AMBIGUOUS
+        elif evidence_disagrees:
+            # Evidence disagrees but votes agree with first pass
+            # Keep value but lower confidence to flag for human attention
+            logger.info(
+                f"Flagging {field_name}: evidence text suggests "
+                f"'{evidence_suggestion}' but verification votes confirm "
+                f"'{current_value}'"
+            )
+            field.confidence = min(field.confidence, 0.65)
 
         return result
 

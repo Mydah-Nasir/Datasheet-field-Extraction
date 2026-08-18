@@ -28,6 +28,7 @@ class ExtractionState(TypedDict, total=False):
     # After Human Review (Interrupt Response)
     # Expected format: list[dict] e.g. [{"field": "pwht", "value": "YES"}]
     human_review_decision: list[dict] | None
+    user_approved: bool | None
 
     # After Finalization
     final_annex: dict | None

@@ -83,7 +83,7 @@ class Validator:
             if field_obj.value is not None:
                 try:
                     val = float(field_obj.value)
-                    if val < min_val or val > max_val:
+                    if val > 0 and (val < min_val or val > max_val):
                         issues.append(
                             ValidationIssue(
                                 field=field_attr,
@@ -141,9 +141,13 @@ class Validator:
                     )
                 )
 
-            # Check confidence scores
+            # Check confidence scores (only for automated extractions, not user confirmed/corrected)
             from src.config import settings
-            if field.value is not None and field.confidence < settings.CONFIDENCE_THRESHOLD:
+            if (
+                field.value is not None
+                and field.status not in (FieldStatus.USER_CONFIRMED, FieldStatus.USER_CORRECTED)
+                and field.confidence < settings.CONFIDENCE_THRESHOLD
+            ):
                 field.status = FieldStatus.AMBIGUOUS
                 needs_review = True
                 issues.append(
