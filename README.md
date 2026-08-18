@@ -83,8 +83,8 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 
 # Configure environment
-cp .env.example .env
-# Edit .env and set GEMINI_API_KEY=your_key_here
+# Copy .streamlit/secrets.toml.example to .streamlit/secrets.toml and add your GEMINI_API_KEY
+cp .streamlit/secrets.toml.example .streamlit/secrets.toml
 ```
 
 ### Running the Web Application
@@ -92,7 +92,7 @@ cp .env.example .env
 Launch the Streamlit interactive dashboard:
 
 ```bash
-streamlit run src/app.py
+streamlit run app.py
 ```
 
 ### Running Tests
@@ -105,6 +105,9 @@ pytest tests/unit
 
 ```text
 Datasheet-field-Extraction/
+├── app.py            # Streamlit web application
+├── requirements.txt  # Project dependencies
+├── pyproject.toml    # Tool and package configuration
 ├── src/
 │   ├── annexure/     # AnnexureRecord models, builder, and multi-format exporters (Excel, CSV, JSON)
 │   ├── api/          # FastAPI REST endpoints
@@ -113,6 +116,7 @@ Datasheet-field-Extraction/
 │   ├── extraction/   # Gemini multi-modal extraction service, prompts, and deterministic normalizers
 │   ├── graph/        # LangGraph stateful graph, HITL checkpoints, nodes, and routing
 │   ├── persistence/  # Checkpointer memory configuration
+│   └── config.py     # Application and secrets configuration
 │   ├── app.py        # Streamlit web application
 │   └── config.py     # Pydantic environment configuration
 ├── tests/

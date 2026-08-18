@@ -14,7 +14,7 @@ from streamlit.testing.v1 import AppTest
 def app():
     # Initialize the AppTest targeting our main application file
     # Relative to this test file's location
-    app_path = os.path.join(os.path.dirname(__file__), "..", "..", "src", "app.py")
+    app_path = os.path.join(os.path.dirname(__file__), "..", "..", "app.py")
     at = AppTest.from_file(app_path, default_timeout=30)
     return at
 
@@ -83,7 +83,7 @@ def test_mock_mode_hitl_lifecycle(app):
 
     pdf_path = os.path.join(os.path.dirname(__file__), "..", "..", "example_pdfs", "(Datasheet WOSEP) SD-8500-13513-0001_0F1_001.pdf")
     
-    with patch("src.app.st.file_uploader") as mock_uploader:
+    with patch("app.st.file_uploader") as mock_uploader:
         mock_file = MagicMock()
         mock_file.name = "test.pdf"
         with open(pdf_path, "rb") as f:

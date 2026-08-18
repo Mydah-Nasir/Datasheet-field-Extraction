@@ -1,8 +1,15 @@
 """Streamlit application for Multi-Datasheet Extraction and Annexure-1 Equipment Summary."""
 
 import os
+import sys
 import uuid
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+# Ensure project root is in sys.path
+_ROOT = Path(__file__).resolve().parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
 
 import pandas as pd
 import streamlit as st
@@ -144,7 +151,7 @@ def extract_single_doc(doc_id: str) -> None:
 
     api_key = settings.GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        doc["error"] = "GEMINI_API_KEY is not set. Please set it in your .env file."
+        doc["error"] = "GEMINI_API_KEY is not set. Please set it in your secrets.toml file."
         return
 
     config = {"configurable": {"thread_id": doc["thread_id"]}}
@@ -163,7 +170,7 @@ def extract_all_documents(doc_ids: List[str], progress_placeholder=None) -> None
     """Extract all specified documents sequentially within the active Streamlit context."""
     api_key = settings.GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        st.error("GEMINI_API_KEY is not set. Please set it in your .env file.")
+        st.error("GEMINI_API_KEY is not set. Please set it in your secrets.toml file.")
         st.stop()
 
     total = len(doc_ids)
@@ -258,7 +265,7 @@ with st.sidebar:
         if st.button(btn_label, type="primary", width="stretch"):
             api_key = settings.GEMINI_API_KEY or os.environ.get("GEMINI_API_KEY")
             if not api_key:
-                st.error("GEMINI_API_KEY is not set. Please set it in your .env file.")
+                st.error("GEMINI_API_KEY is not set. Please set it in your secrets.toml file.")
                 st.stop()
 
             target_ids = pending_docs if pending_docs else list(st.session_state.documents.keys())
@@ -321,11 +328,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-if not st.session_state.documents:
-    st.info("Upload one or more Mechanical Datasheet files from the sidebar to begin extraction.")
-    st.stop()
-
-
 # --- Aggregate Document States & Data for Annexure Table ---
 annex_table_rows = []
 all_annex_records: List[AnnexureRecord] = []
@@ -335,7 +337,7 @@ review_count = 0
 pending_count = 0
 error_count = 0
 
-doc_items = list(st.session_state.documents.items())
+doc_items = list(st.session_state.documents.items()) if st.session_state.documents else []
 
 for idx, (d_id, d_info) in enumerate(doc_items, start=1):
     state = get_doc_state(d_info["thread_id"])
@@ -642,7 +644,6 @@ def show_final_annexure_dialog():
 # =========================================================================
 with tab_table:
     st.subheader("Master Equipment Table")
-    df_annex = pd.DataFrame(annex_table_rows).astype(str)
     table_columns = [
         "S/N",
         "TAG NO.",
@@ -667,9 +668,13 @@ with tab_table:
         "Pickling & Passivation",
         "WT-Tons (Each) (Approx.)",
     ]
+    if annex_table_rows:
+        df_annex = pd.DataFrame(annex_table_rows)[table_columns].astype(str)
+    else:
+        df_annex = pd.DataFrame(columns=table_columns)
 
     st.dataframe(
-        df_annex[table_columns],
+        df_annex,
         width="stretch",
         hide_index=True,
     )
@@ -683,246 +688,245 @@ with tab_table:
 # TAB 2: INDIVIDUAL DOCUMENT INSPECTOR & HITL REVIEW
 # =========================================================================
 with tab_review:
-    doc_keys = list(st.session_state.documents.keys())
+    doc_keys = list(st.session_state.documents.keys()) if st.session_state.documents else []
     if not doc_keys:
-        st.info("No documents available to inspect.")
-        st.stop()
+        st.info("No documents available to inspect. Upload datasheets from the sidebar to begin.")
+    else:
+        if st.session_state.selected_doc_id not in st.session_state.documents:
+            st.session_state.selected_doc_id = doc_keys[0]
 
-    if st.session_state.selected_doc_id not in st.session_state.documents:
-        st.session_state.selected_doc_id = doc_keys[0]
-
-    selected_doc_name = st.selectbox(
-        "Select Datasheet to Inspect & Review:",
-        options=doc_keys,
-        format_func=lambda k: f"{st.session_state.documents[k]['filename']}",
-        index=doc_keys.index(st.session_state.selected_doc_id),
-    )
-    st.session_state.selected_doc_id = selected_doc_name
-    current_doc = st.session_state.documents[selected_doc_name]
-
-    current_state = get_doc_state(current_doc["thread_id"])
-    next_node = current_state.next[0] if current_state.next else None
-    is_interrupted = len(current_state.tasks) > 0 and bool(current_state.tasks[0].interrupts)
-    is_completed = not next_node and bool(current_state.values.get("final_annex"))
-    has_error = bool(current_state.values.get("error")) or bool(current_doc.get("error"))
-
-    st.markdown(f"### Inspecting: `{current_doc['filename']}`")
-
-    # Document Pending
-    if not current_state.values.get("document_path") and not has_error and not is_interrupted and not is_completed:
-        st.info("This document has not been extracted yet.")
-        if st.button("Extract This Datasheet Now", type="primary"):
-            extract_single_doc(selected_doc_name)
-            st.rerun()
-
-    # Document Error
-    elif has_error:
-        err_msg = current_state.values.get("error") or current_doc.get("error")
-        st.error(f"Extraction error: {err_msg}")
-        if st.button("Retry Extraction", type="secondary"):
-            current_doc["error"] = None
-            extract_single_doc(selected_doc_name)
-            st.rerun()
-
-    # Document In Human Review (Interrupt)
-    elif is_interrupted:
-        st.subheader("Human-in-the-Loop Review")
-
-        interrupt_payload = current_state.tasks[0].interrupts[0].value
-        flagged_fields = {f["field"]: f for f in interrupt_payload["fields"]}
-
-        val_result = current_state.values.get("validation_result")
-        val_issues = {}
-        if val_result and hasattr(val_result, "issues"):
-            for issue in val_result.issues:
-                if issue.field not in val_issues:
-                    val_issues[issue.field] = []
-                val_issues[issue.field].append(f"[{issue.code}] {issue.message}")
-
-        normalized: ExtractionResult = current_state.values["normalized_extraction"]
-
-        n_flagged = len(flagged_fields)
-        n_val_issues = len(val_issues)
-
-        if n_flagged > 0 or n_val_issues > 0:
-            st.warning(
-                f"{n_flagged} fields flagged for review and {n_val_issues} validation issues detected. "
-                "Review all fields below. You can edit the Corrected Value column for any field."
-            )
-        else:
-            st.info(
-                "All fields passed validation. Verify the extracted values below before finalizing. "
-                "You can still edit any field in the Corrected Value column."
-            )
-
-        all_field_attrs = [
-            "tag_no", "description", "ref_data_sheet", "design_code", "moc",
-            "qty", "orientation", "vessel_id_mm", "vessel_tl_tl_length_mm",
-            "shell_min_thk_mm", "head_min_thk_mm", "head_type", "nozzle_type",
-            "impact_tested", "rt", "pwht", "support_type", "pickling_passivation", "weight_tons_each",
-        ]
-
-        data_rows = []
-
-        for attr in all_field_attrs:
-            field = getattr(normalized, attr)
-            is_flagged = attr in flagged_fields
-            has_val_issue = attr in val_issues
-            flag_info = flagged_fields.get(attr, {})
-
-            if is_flagged or has_val_issue:
-                review_tag = "FLAGGED"
-            elif field.confidence < 0.8:
-                review_tag = "WARNING"
-            else:
-                review_tag = "VALID"
-
-            display_val = "" if field.value is None else str(field.value)
-
-            all_issues = []
-            if is_flagged:
-                all_issues.extend(flag_info.get("issues", []))
-            if has_val_issue:
-                all_issues.extend(val_issues[attr])
-
-            data_rows.append(
-                {
-                    "Review": review_tag,
-                    "Field": attr.upper(),
-                    "Extracted Value": display_val,
-                    "Corrected Value": display_val,
-                    "Confidence": f"{field.confidence:.0%}",
-                    "Status": field.status.value,
-                    "Issues": "; ".join(all_issues) if all_issues else "",
-                    "Evidence": field.evidence[0].text[:80] if field.evidence else "N/A",
-                    "_attr_name": attr,
-                    "_orig_val": display_val,
-                }
-            )
-
-        # Handle painting sub-fields
-        for p_attr in ["external", "internal"]:
-            p_field = getattr(normalized.painting, p_attr)
-            full_attr = f"painting_{p_attr}"
-            is_flagged = full_attr in flagged_fields
-            has_val_issue = full_attr in val_issues
-            flag_info = flagged_fields.get(full_attr, {})
-
-            if is_flagged or has_val_issue:
-                review_tag = "FLAGGED"
-            elif p_field.confidence < 0.8:
-                review_tag = "WARNING"
-            else:
-                review_tag = "VALID"
-
-            p_display_val = "" if p_field.value is None else str(p_field.value)
-
-            all_issues = []
-            if is_flagged:
-                all_issues.extend(flag_info.get("issues", []))
-            if has_val_issue:
-                all_issues.extend(val_issues[full_attr])
-
-            data_rows.append(
-                {
-                    "Review": review_tag,
-                    "Field": f"PAINTING ({p_attr.upper()})",
-                    "Extracted Value": p_display_val,
-                    "Corrected Value": p_display_val,
-                    "Confidence": f"{p_field.confidence:.0%}",
-                    "Status": p_field.status.value,
-                    "Issues": "; ".join(all_issues) if all_issues else "",
-                    "Evidence": p_field.evidence[0].text[:80] if p_field.evidence else "N/A",
-                    "_attr_name": full_attr,
-                    "_orig_val": p_display_val,
-                }
-            )
-
-        priority_order = {"FLAGGED": 0, "WARNING": 1, "VALID": 2}
-        data_rows.sort(key=lambda r: (priority_order.get(r["Review"], 3), r["Confidence"]))
-
-        df_editor = pd.DataFrame(data_rows)
-        st.markdown("Edit the **Corrected Value** column to fix any field. Fields needing attention are sorted to the top.")
-
-        edited_df = st.data_editor(
-            df_editor,
-            key=f"editor_{selected_doc_name}",
-            column_config={
-                "Review": st.column_config.TextColumn("Review Status", disabled=True, width="small"),
-                "Field": st.column_config.TextColumn("Field", disabled=True),
-                "Extracted Value": st.column_config.TextColumn("Extracted", disabled=True),
-                "Corrected Value": st.column_config.TextColumn("Corrected Value", disabled=False),
-                "Confidence": st.column_config.TextColumn("Confidence", disabled=True, width="small"),
-                "Status": st.column_config.TextColumn("Status", disabled=True),
-                "Issues": st.column_config.TextColumn("Issues", disabled=True),
-                "Evidence": st.column_config.TextColumn("Evidence", disabled=True),
-                "_attr_name": None,
-                "_orig_val": None,
-            },
-            disabled=["Review", "Field", "Extracted Value", "Confidence", "Status", "Issues", "Evidence"],
-            hide_index=True,
-            width="stretch",
-            num_rows="fixed",
+        selected_doc_name = st.selectbox(
+            "Select Datasheet to Inspect & Review:",
+            options=doc_keys,
+            format_func=lambda k: f"{st.session_state.documents[k]['filename']}",
+            index=doc_keys.index(st.session_state.selected_doc_id),
         )
+        st.session_state.selected_doc_id = selected_doc_name
+        current_doc = st.session_state.documents[selected_doc_name]
 
-        col_approve, col_view = st.columns([1, 1])
-        with col_approve:
-            if st.button("Approve & Submit Corrections", type="primary", width="stretch"):
-                decisions = []
-                for _, row in edited_df.iterrows():
-                    field_attr = row["_attr_name"]
-                    orig_val = str(row.get("_orig_val", "")).strip()
-                    new_val = str(row["Corrected Value"]).strip() if pd.notna(row["Corrected Value"]) else ""
+        current_state = get_doc_state(current_doc["thread_id"])
+        next_node = current_state.next[0] if current_state.next else None
+        is_interrupted = len(current_state.tasks) > 0 and bool(current_state.tasks[0].interrupts)
+        is_completed = not next_node and bool(current_state.values.get("final_annex"))
+        has_error = bool(current_state.values.get("error")) or bool(current_doc.get("error"))
 
-                    if new_val != orig_val or (row["Review"] == "FLAGGED" and new_val != ""):
-                        decisions.append({"field": field_attr, "value": new_val if new_val != "" else None})
+        st.markdown(f"### Inspecting: `{current_doc['filename']}`")
 
-                with st.spinner("Submitting corrections and re-validating..."):
-                    graph.invoke(Command(resume=decisions), {"configurable": {"thread_id": current_doc["thread_id"]}})
+        # Document Pending
+        if not current_state.values.get("document_path") and not has_error and not is_interrupted and not is_completed:
+            st.info("This document has not been extracted yet.")
+            if st.button("Extract This Datasheet Now", type="primary"):
+                extract_single_doc(selected_doc_name)
                 st.rerun()
 
-        with col_view:
-            if st.button("Display in Final Result Format", type="secondary", width="stretch"):
-                show_final_annexure_dialog()
+        # Document Error
+        elif has_error:
+            err_msg = current_state.values.get("error") or current_doc.get("error")
+            st.error(f"Extraction error: {err_msg}")
+            if st.button("Retry Extraction", type="secondary"):
+                current_doc["error"] = None
+                extract_single_doc(selected_doc_name)
+                st.rerun()
 
-    # Document Completed
-    elif is_completed:
-        st.success("This datasheet has been fully validated and finalized.")
-        final_annex = current_state.values["final_annex"]
-        record = AnnexureRecord(**final_annex)
+        # Document In Human Review (Interrupt)
+        elif is_interrupted:
+            st.subheader("Human-in-the-Loop Review")
 
-        st.markdown("#### Validated Record Preview")
-        single_row = [r for r in annex_table_rows if r.get("_doc_id") == selected_doc_name]
-        if single_row:
-            st.html(render_annexure_html_table(single_row))
+            interrupt_payload = current_state.tasks[0].interrupts[0].value
+            flagged_fields = {f["field"]: f for f in interrupt_payload["fields"]}
 
-        col1, col2, col3 = st.columns(3)
-        json_bytes = export_to_json([record])
-        csv_bytes = export_to_csv([record])
-        excel_bytes = export_to_excel([record])
+            val_result = current_state.values.get("validation_result")
+            val_issues = {}
+            if val_result and hasattr(val_result, "issues"):
+                for issue in val_result.issues:
+                    if issue.field not in val_issues:
+                        val_issues[issue.field] = []
+                    val_issues[issue.field].append(f"[{issue.code}] {issue.message}")
 
-        with col1:
-            st.download_button(
-                label="Download Excel (.xlsx)",
-                data=excel_bytes,
-                file_name=f"annex_{current_doc['filename']}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                type="primary",
+            normalized: ExtractionResult = current_state.values["normalized_extraction"]
+
+            n_flagged = len(flagged_fields)
+            n_val_issues = len(val_issues)
+
+            if n_flagged > 0 or n_val_issues > 0:
+                st.warning(
+                    f"{n_flagged} fields flagged for review and {n_val_issues} validation issues detected. "
+                    "Review all fields below. You can edit the Corrected Value column for any field."
+                )
+            else:
+                st.info(
+                    "All fields passed validation. Verify the extracted values below before finalizing. "
+                    "You can still edit any field in the Corrected Value column."
+                )
+
+            all_field_attrs = [
+                "tag_no", "description", "ref_data_sheet", "design_code", "moc",
+                "qty", "orientation", "vessel_id_mm", "vessel_tl_tl_length_mm",
+                "shell_min_thk_mm", "head_min_thk_mm", "head_type", "nozzle_type",
+                "impact_tested", "rt", "pwht", "support_type", "pickling_passivation", "weight_tons_each",
+            ]
+
+            data_rows = []
+
+            for attr in all_field_attrs:
+                field = getattr(normalized, attr)
+                is_flagged = attr in flagged_fields
+                has_val_issue = attr in val_issues
+                flag_info = flagged_fields.get(attr, {})
+
+                if is_flagged or has_val_issue:
+                    review_tag = "FLAGGED"
+                elif field.confidence < 0.8:
+                    review_tag = "WARNING"
+                else:
+                    review_tag = "VALID"
+
+                display_val = "" if field.value is None else str(field.value)
+
+                all_issues = []
+                if is_flagged:
+                    all_issues.extend(flag_info.get("issues", []))
+                if has_val_issue:
+                    all_issues.extend(val_issues[attr])
+
+                data_rows.append(
+                    {
+                        "Review": review_tag,
+                        "Field": attr.upper(),
+                        "Extracted Value": display_val,
+                        "Corrected Value": display_val,
+                        "Confidence": f"{field.confidence:.0%}",
+                        "Status": field.status.value,
+                        "Issues": "; ".join(all_issues) if all_issues else "",
+                        "Evidence": field.evidence[0].text[:80] if field.evidence else "N/A",
+                        "_attr_name": attr,
+                        "_orig_val": display_val,
+                    }
+                )
+
+            # Handle painting sub-fields
+            for p_attr in ["external", "internal"]:
+                p_field = getattr(normalized.painting, p_attr)
+                full_attr = f"painting_{p_attr}"
+                is_flagged = full_attr in flagged_fields
+                has_val_issue = full_attr in val_issues
+                flag_info = flagged_fields.get(full_attr, {})
+
+                if is_flagged or has_val_issue:
+                    review_tag = "FLAGGED"
+                elif p_field.confidence < 0.8:
+                    review_tag = "WARNING"
+                else:
+                    review_tag = "VALID"
+
+                p_display_val = "" if p_field.value is None else str(p_field.value)
+
+                all_issues = []
+                if is_flagged:
+                    all_issues.extend(flag_info.get("issues", []))
+                if has_val_issue:
+                    all_issues.extend(val_issues[full_attr])
+
+                data_rows.append(
+                    {
+                        "Review": review_tag,
+                        "Field": f"PAINTING ({p_attr.upper()})",
+                        "Extracted Value": p_display_val,
+                        "Corrected Value": p_display_val,
+                        "Confidence": f"{p_field.confidence:.0%}",
+                        "Status": p_field.status.value,
+                        "Issues": "; ".join(all_issues) if all_issues else "",
+                        "Evidence": p_field.evidence[0].text[:80] if p_field.evidence else "N/A",
+                        "_attr_name": full_attr,
+                        "_orig_val": p_display_val,
+                    }
+                )
+
+            priority_order = {"FLAGGED": 0, "WARNING": 1, "VALID": 2}
+            data_rows.sort(key=lambda r: (priority_order.get(r["Review"], 3), r["Confidence"]))
+
+            df_editor = pd.DataFrame(data_rows)
+            st.markdown("Edit the **Corrected Value** column to fix any field. Fields needing attention are sorted to the top.")
+
+            edited_df = st.data_editor(
+                df_editor,
+                key=f"editor_{selected_doc_name}",
+                column_config={
+                    "Review": st.column_config.TextColumn("Review Status", disabled=True, width="small"),
+                    "Field": st.column_config.TextColumn("Field", disabled=True),
+                    "Extracted Value": st.column_config.TextColumn("Extracted", disabled=True),
+                    "Corrected Value": st.column_config.TextColumn("Corrected Value", disabled=False),
+                    "Confidence": st.column_config.TextColumn("Confidence", disabled=True, width="small"),
+                    "Status": st.column_config.TextColumn("Status", disabled=True),
+                    "Issues": st.column_config.TextColumn("Issues", disabled=True),
+                    "Evidence": st.column_config.TextColumn("Evidence", disabled=True),
+                    "_attr_name": None,
+                    "_orig_val": None,
+                },
+                disabled=["Review", "Field", "Extracted Value", "Confidence", "Status", "Issues", "Evidence"],
+                hide_index=True,
                 width="stretch",
+                num_rows="fixed",
             )
-        with col2:
-            st.download_button(
-                label="Download CSV",
-                data=csv_bytes,
-                file_name=f"annex_{current_doc['filename']}.csv",
-                mime="text/csv",
-                width="stretch",
-            )
-        with col3:
-            st.download_button(
-                label="Download JSON",
-                data=json_bytes,
-                file_name=f"annex_{current_doc['filename']}.json",
-                mime="application/json",
-                width="stretch",
-            )
+
+            col_approve, col_view = st.columns([1, 1])
+            with col_approve:
+                if st.button("Approve & Submit Corrections", type="primary", width="stretch"):
+                    decisions = []
+                    for _, row in edited_df.iterrows():
+                        field_attr = row["_attr_name"]
+                        orig_val = str(row.get("_orig_val", "")).strip()
+                        new_val = str(row["Corrected Value"]).strip() if pd.notna(row["Corrected Value"]) else ""
+
+                        if new_val != orig_val or (row["Review"] == "FLAGGED" and new_val != ""):
+                            decisions.append({"field": field_attr, "value": new_val if new_val != "" else None})
+
+                    with st.spinner("Submitting corrections and re-validating..."):
+                        graph.invoke(Command(resume=decisions), {"configurable": {"thread_id": current_doc["thread_id"]}})
+                    st.rerun()
+
+            with col_view:
+                if st.button("Display in Final Result Format", type="secondary", width="stretch"):
+                    show_final_annexure_dialog()
+
+        # Document Completed
+        elif is_completed:
+            st.success("This datasheet has been fully validated and finalized.")
+            final_annex = current_state.values["final_annex"]
+            record = AnnexureRecord(**final_annex)
+
+            st.markdown("#### Validated Record Preview")
+            single_row = [r for r in annex_table_rows if r.get("_doc_id") == selected_doc_name]
+            if single_row:
+                st.html(render_annexure_html_table(single_row))
+
+            col1, col2, col3 = st.columns(3)
+            json_bytes = export_to_json([record])
+            csv_bytes = export_to_csv([record])
+            excel_bytes = export_to_excel([record])
+
+            with col1:
+                st.download_button(
+                    label="Download Excel (.xlsx)",
+                    data=excel_bytes,
+                    file_name=f"annex_{current_doc['filename']}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    type="primary",
+                    width="stretch",
+                )
+            with col2:
+                st.download_button(
+                    label="Download CSV",
+                    data=csv_bytes,
+                    file_name=f"annex_{current_doc['filename']}.csv",
+                    mime="text/csv",
+                    width="stretch",
+                )
+            with col3:
+                st.download_button(
+                    label="Download JSON",
+                    data=json_bytes,
+                    file_name=f"annex_{current_doc['filename']}.json",
+                    mime="application/json",
+                    width="stretch",
+                )
