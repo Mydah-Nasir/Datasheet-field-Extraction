@@ -60,26 +60,35 @@ coverage.xml
 .ruff_cache/
 
 # ===========================
-# Documents / Uploads (runtime)
+# Documents / Uploads / Examples
 # ===========================
 uploads/
 documents/
+example_pdfs/
+Test_image/
+scratch/
+temp/
+tmp/
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.svg.tmp
 
 # ===========================
-# Logs
+# Logs & System artifacts
 # ===========================
 *.log
 logs/
+.system_generated/
 
 # ===========================
-# Scratch / Temp Work
-# ===========================
-scratch/
-Test_image/
-bad.png
-
-# ===========================
-# Exports / Downloads
+# Exports / Data Dumps
 # ===========================
 annex_*.*
+*.xlsx
+*.xls
+*.csv
+*.parquet
+bad.png
 
