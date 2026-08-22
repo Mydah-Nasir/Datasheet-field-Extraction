@@ -131,7 +131,7 @@ def human_review_node(state: ExtractionState) -> dict:
         "tag_no", "description", "ref_data_sheet", "design_code", "moc",
         "qty", "orientation", "vessel_id_mm", "vessel_tl_tl_length_mm",
         "shell_min_thk_mm", "head_min_thk_mm", "head_type", "nozzle_type",
-        "impact_tested", "rt", "pwht", "support_type", "weight_tons_each",
+        "impact_tested", "rt", "pwht", "support_type", "pickling_passivation", "weight_tons_each",
     ]
 
     for attr in all_field_attrs:
@@ -231,7 +231,7 @@ def apply_human_decision_node(state: ExtractionState) -> dict:
         normalized.shell_min_thk_mm, normalized.head_min_thk_mm, normalized.head_type,
         normalized.nozzle_type, normalized.impact_tested, normalized.rt,
         normalized.pwht, normalized.support_type, normalized.painting.external,
-        normalized.painting.internal, normalized.weight_tons_each,
+        normalized.painting.internal, normalized.pickling_passivation, normalized.weight_tons_each,
     ]
     for field in all_fields:
         if field.value is not None and field.status in (

@@ -164,11 +164,23 @@ class GeminiExtractionService:
                 ),
             )
 
-            # 3. Call the model for full extraction
+            # 3. Call the model for full extraction with explicit multi-page drawing search prompt
             logger.debug(f"Calling Gemini model: {self.model_name}")
+            prompt_instruction = (
+                "Extract all 19 mechanical datasheet / pressure vessel parameters from this document. "
+                "CRITICAL INSTRUCTIONS FOR MULTI-PAGE DRAWINGS: "
+                "1. If this is a multi-page drawing package (e.g. 5 to 30+ pages), scan ALL pages thoroughly. "
+                "2. Physical vessel geometry (VESSEL_ID_MM, VESSEL_TL_TL_LENGTH_MM, SHELL_MIN_THK_MM, HEAD_MIN_THK_MM, HEAD_TYPE) "
+                "are often located directly on the General Arrangement (GA) or Elevation view drawings (e.g. on pages 4 to 15). "
+                "3. Look for standard drawing callout patterns such as '6200 [20\'-4 1/8\"] I.D.', '32207.2 [105\'-8\"] T.L. TO T.L.', "
+                "'... x 28.6 [1.126\"] THK.', and '2:1 ELLIPSOIDAL HEAD / 26 [1.024\"] MIN. THK. AFTER FORMING'. "
+                "4. For HEAD_MIN_THK_MM and HEAD_TYPE: Extract from the primary 2:1 ellipsoidal outer vessel closure head callout (e.g. 26 mm). Do NOT extract from internal baffles or secondary components that say 22 mm. "
+                "5. Always extract the metric dimension (in mm). "
+                "6. Ensure all 19 parameters are populated with evidence and page numbers."
+            )
             response = self.client.models.generate_content(
                 model=self.model_name,
-                contents=[uploaded_file],
+                contents=[uploaded_file, prompt_instruction],
                 config=config,
             )
 
@@ -233,12 +245,12 @@ class GeminiExtractionService:
 
         Returns the value the evidence suggests ('YES' or 'NO'), or None if inconclusive.
         """
-        if not field.evidence or not field.value:
+        if not field.evidence:
             return None
 
-        value_upper = field.value.strip().upper()
+        value_upper = field.value.strip().upper() if (field.value and isinstance(field.value, str)) else ""
         # Combine all evidence text
-        evidence_text = " ".join(e.text for e in field.evidence)
+        evidence_text = " ".join(e.text for e in field.evidence if e.text)
 
         import re
 
@@ -271,9 +283,9 @@ class GeminiExtractionService:
         evidence_suggests_no = bool(re.search(no_direct, evidence_text, re.IGNORECASE))
         evidence_suggests_yes = bool(re.search(yes_direct, evidence_text, re.IGNORECASE))
 
-        if value_upper == "YES" and evidence_suggests_no and not evidence_suggests_yes:
+        if evidence_suggests_no and not evidence_suggests_yes:
             return "NO"
-        if value_upper == "NO" and evidence_suggests_yes and not evidence_suggests_no:
+        if evidence_suggests_yes and not evidence_suggests_no:
             return "YES"
 
         return None
@@ -465,16 +477,24 @@ class GeminiExtractionService:
         - If evidence cross-check disagrees but votes agree with first-pass → flag as AMBIGUOUS
         - If everything agrees → keep value, maintain confidence
         """
-        field = getattr(result, field_name)
-
-        if not vote_winner or not current_value:
-            # Not enough data to verify — lower confidence to be safe
-            if current_value:
+        if not current_value:
+            resolved = vote_winner if (vote_winner and vote_winner in ("YES", "NO")) else evidence_suggestion
+            if resolved:
+                field.value = resolved
+                field.confidence = 0.85 if vote_agreement >= 0.67 else 0.70
+                field.status = FieldStatus.EXTRACTED
+                logger.info(f"Populated missing {field_name} with '{resolved}' from verification/evidence.")
+            elif vote_count > 0:
                 field.confidence = min(field.confidence, 0.5)
-                logger.warning(
-                    f"Insufficient verification data for {field_name} "
-                    f"(got {vote_count} valid votes) — lowering confidence"
-                )
+            return result
+
+        if not vote_winner:
+            # Not enough data to verify — lower confidence to be safe
+            field.confidence = min(field.confidence, 0.5)
+            logger.warning(
+                f"Insufficient verification data for {field_name} "
+                f"(got {vote_count} valid votes) — lowering confidence"
+            )
             return result
 
         votes_agree_with_first_pass = (vote_winner == current_value)

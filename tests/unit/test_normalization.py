@@ -258,3 +258,146 @@ def test_normalize_nozzle_type(base_extraction):
     assert res3.nozzle_type.status == FieldStatus.NORMALIZED
 
 
+def test_recover_values_from_evidence():
+    """Test that Normalizer extracts values from evidence when field.value is None or empty."""
+    normalizer = Normalizer()
+
+    extraction = ExtractionResult(
+        tag_no=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="TAG NO: V-202")]),
+        description=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="FLARE KNOCKOUT DRUM")]),
+        ref_data_sheet=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="SD-8500-13513-0001")]),
+        design_code=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="ASME SEC VIII DIV 1")]),
+        moc=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="SA 516 GR 70N")]),
+        qty=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="QTY: 2 UNITS")]),
+        orientation=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="HORIZONTAL VESSEL")]),
+        vessel_id_mm=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="ID 3200 mm")]),
+        vessel_tl_tl_length_mm=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="T/T LENGTH: 14500 mm")]),
+        shell_min_thk_mm=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="SHELL THK. 25.4 mm (MIN. 22.0 mm)")]),
+        head_min_thk_mm=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="HEAD THK 18 mm")]),
+        head_type=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="2:1 ELLIPSOIDAL")]),
+        nozzle_type=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="150# RFSRWN, 300# RFLWN")]),
+        impact_tested=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="IMPACT TESTING: ◯ YES ◉ NO")]),
+        rt=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="RT-1 100%")]),
+        pwht=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="PWHT: ◉ YES ◯ NO")]),
+        support_type=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="SADDLE & PAD")]),
+        painting=PaintingField(
+            external=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="APCS-1B")]),
+            internal=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="NONE")]),
+        ),
+        pickling_passivation=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="APCS-104")]),
+        weight_tons_each=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="OPERATING WEIGHT: 85,000 kg")]),
+    )
+
+    res = normalizer.normalize(extraction)
+
+    assert res.tag_no.value == "V-202"
+    assert res.description.value == "FLARE KNOCKOUT DRUM"
+    assert res.ref_data_sheet.value == "SD-8500-13513-0001"
+    assert res.design_code.value == "ASME SEC VIII DIV 1"
+    assert res.moc.value == "SA 516 GR 70N"
+    assert res.qty.value == 2
+    assert res.orientation.value == "HORIZONTAL"
+    assert res.vessel_id_mm.value == 3200.0
+    assert res.vessel_tl_tl_length_mm.value == 14500.0
+    assert res.shell_min_thk_mm.value == 22.0
+    assert res.head_min_thk_mm.value == 18.0
+    assert res.head_type.value == "2:1 ELLIPSOIDAL"
+    assert res.nozzle_type.value == "150# RFSRWN, 300# RFLWN"
+    assert res.impact_tested.value == "NO"
+    assert res.rt.value == "RT-1 100%"
+    assert res.pwht.value == "YES"
+    assert res.support_type.value == "SADDLE & PAD"
+    assert res.painting.external.value == "APCS-1B"
+    assert res.painting.internal.value == "NONE"
+    assert res.pickling_passivation.value == "APCS-104"
+    assert res.weight_tons_each.value == 85.0
+
+
+def test_normalize_weight_fabricated_vs_empty():
+    """Verify client rule: If Fabricated Weight is present, use it. Otherwise use Empty Weight."""
+    normalizer = Normalizer()
+
+    # Scenario 1: Both Fabricated Weight (418,000 kg) and Empty Weight (380,000 kg) present -> must choose Fabricated (418 tons)
+    field_both = ExtractionField[float](
+        value=None,
+        status=FieldStatus.EXTRACTED,
+        confidence=0.9,
+        evidence=[Evidence(page=1, text="EMPTY WEIGHT: 380,000 KG. FABRICATED WEIGHT: 418,000 KG. OPERATING WEIGHT: 520,000 KG.")],
+    )
+    normalizer._normalize_weight(field_both)
+    assert field_both.value == 418.0
+    assert field_both.status == FieldStatus.NORMALIZED
+
+    # Scenario 2: Only Empty Weight (85,000 kg) present -> must fallback to Empty Weight (85 tons)
+    field_empty_only = ExtractionField[float](
+        value=None,
+        status=FieldStatus.EXTRACTED,
+        confidence=0.9,
+        evidence=[Evidence(page=1, text="WEIGHT: EMPTY WT: 85,000 KG, FULL OF WATER: 190,000 KG.")],
+    )
+    normalizer._normalize_weight(field_empty_only)
+    assert field_empty_only.value == 85.0
+    assert field_empty_only.status == FieldStatus.NORMALIZED
+
+    # Scenario 3: Weight already in tons
+    field_tons = ExtractionField[float](
+        value=None,
+        status=FieldStatus.EXTRACTED,
+        confidence=0.9,
+        evidence=[Evidence(page=1, text="FABRICATED WT: 350.5 TONS")],
+    )
+    normalizer._normalize_weight(field_tons)
+    assert field_tons.value == 350.5
+    assert field_tons.status == FieldStatus.NORMALIZED
+
+
+def test_normalize_drawing_callout_patterns():
+    """Verify normalization of GA/elevation drawing callout patterns from multi-page packages."""
+    normalizer = Normalizer()
+
+    # 1. Head thickness with MIN. THK. AFTER FORMING
+    head_field = ExtractionField[float](
+        value=None,
+        status=FieldStatus.EXTRACTED,
+        confidence=0.9,
+        evidence=[Evidence(page=10, text='2:1 ELLIPSOIDAL HEAD 26 [1.024"] MIN. THK. AFTER FORMING')],
+    )
+    normalizer._normalize_thickness(head_field)
+    assert head_field.value == 26.0
+    assert head_field.status == FieldStatus.NORMALIZED
+
+    # 2. Shell course dimension "<Length> x <Thickness> THK."
+    shell_field = ExtractionField[float](
+        value=None,
+        status=FieldStatus.EXTRACTED,
+        confidence=0.9,
+        evidence=[Evidence(page=10, text='18607.2 [61\'-0 5/8"] x 28.6 [1.126"] THK.')],
+    )
+    normalizer._normalize_thickness(shell_field)
+    assert shell_field.value == 28.6
+    assert shell_field.status == FieldStatus.NORMALIZED
+
+    # 3. TL-TL Length with dual dimensions
+    tl_field = ExtractionField[float](
+        value=None,
+        status=FieldStatus.EXTRACTED,
+        confidence=0.9,
+        evidence=[Evidence(page=10, text='32207.2 [105\'-8"] T.L. TO T.L.')],
+    )
+    normalizer._normalize_numeric(tl_field, "mm")
+    assert tl_field.value == 32207.2
+    assert tl_field.status == FieldStatus.NORMALIZED
+
+    # 4. Vessel ID with dual dimensions
+    id_field = ExtractionField[float](
+        value=None,
+        status=FieldStatus.EXTRACTED,
+        confidence=0.9,
+        evidence=[Evidence(page=10, text='6200 [20\'-4 1/8"] I.D.')],
+    )
+    normalizer._normalize_numeric(id_field, "mm")
+    assert id_field.value == 6200.0
+    assert id_field.status == FieldStatus.NORMALIZED
+
+
+

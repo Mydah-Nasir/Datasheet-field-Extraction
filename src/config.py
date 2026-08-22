@@ -30,7 +30,7 @@ for secrets_path in (_STREAMLIT_SECRETS, _ROOT_SECRETS):
                 toml_data = tomllib.load(f)
             for k, v in toml_data.items():
                 if isinstance(v, (str, int, float, bool)):
-                    os.environ.setdefault(str(k), str(v))
+                    os.environ[str(k)] = str(v)
         except Exception:
             pass
 

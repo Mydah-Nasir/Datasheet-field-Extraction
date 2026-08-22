@@ -1,6 +1,8 @@
 """Streamlit application for Multi-Datasheet Extraction and Annexure-1 Equipment Summary."""
 
+import math
 import os
+import re
 import sys
 import uuid
 from pathlib import Path
@@ -17,6 +19,22 @@ from langgraph.types import Command
 
 from src.annexure.export import export_to_csv, export_to_excel, export_to_json
 from src.annexure.models import AnnexureRecord
+from src.calculator import (
+    BENDING_SIDES_FACTOR,
+    SINGLE_PLATE_FACTOR,
+    CalculatorLookups,
+    ShellCalculationInput,
+    ShellCalculationResult,
+    calculate_cost,
+    calculate_material_weight,
+    calculate_plate_length_per_shell,
+    calculate_shell_cost,
+    calculate_total_weight_actual,
+    calculate_wt_each,
+    get_bending_allowance,
+    get_material_density,
+    get_material_rate,
+)
 from src.config import settings
 from src.domain.schema import ExtractionResult, FieldStatus
 from src.graph.workflow import build_graph
@@ -79,31 +97,82 @@ st.markdown(
         box-shadow: 0 4px 12px rgba(29, 78, 216, 0.3) !important;
     }
 
-    /* Metric Cards Styling */
-    .metric-card-box {
-        background: #1d4ed8 !important;
-        border: 1px solid #3b82f6 !important;
+    /* Metric Cards Styling & Truncation Prevention */
+    div[data-testid="stMetric"] {
+        background: #f8fafc !important;
+        border: 1px solid #e2e8f0 !important;
+        border-radius: 8px !important;
+        padding: 12px 14px !important;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05) !important;
+    }
+    div[data-testid="stMetricValue"] {
+        font-size: 1.35rem !important;
+        white-space: normal !important;
+        word-break: normal !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+    }
+    div[data-testid="stMetricLabel"] {
+        font-size: 0.82rem !important;
+        font-weight: 600 !important;
+        color: #475569 !important;
+        white-space: normal !important;
+    }
+
+    .calc-card-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        gap: 16px;
+        margin: 18px 0;
+    }
+    .calc-result-card {
         border-radius: 10px;
-        padding: 14px 18px;
-        color: #ffffff !important;
+        padding: 16px 18px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.05);
         display: flex;
-        align-items: center;
-        gap: 14px;
-        box-shadow: 0 4px 12px rgba(29, 78, 216, 0.2);
+        flex-direction: column;
+        justify-content: space-between;
     }
-    .metric-title {
-        font-size: 0.78rem;
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        color: #eff6ff !important;
-        font-weight: 600;
-        margin: 0;
+    .calc-card-blue {
+        background: #f0f9ff;
+        border: 1px solid #bae6fd;
     }
-    .metric-value {
-        font-size: 1.6rem;
+    .calc-card-green {
+        background: #f0fdf4;
+        border: 1px solid #bbf7d0;
+    }
+    .calc-card-amber {
+        background: #fefce8;
+        border: 1px solid #fef08a;
+    }
+    .calc-card-purple {
+        background: #faf5ff;
+        border: 1px solid #e9d5ff;
+    }
+    .calc-card-rose {
+        background: #fff1f2;
+        border: 1px solid #fecdd3;
+    }
+
+    .calc-card-label {
+        font-size: 0.8rem;
         font-weight: 700;
-        color: #ffffff !important;
-        margin: 2px 0 0 0;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-bottom: 6px;
+    }
+    .calc-card-val {
+        font-size: 1.5rem;
+        font-weight: 800;
+        line-height: 1.25;
+        white-space: normal;
+        word-break: break-word;
+    }
+    .calc-card-sub {
+        font-size: 0.82rem;
+        font-weight: 500;
+        margin-top: 4px;
+        opacity: 0.85;
     }
 
     .annexure-title-header {
@@ -529,7 +598,7 @@ if pending_count > 0:
 st.divider()
 
 # --- Main Navigation Tabs ---
-tab_table, tab_review = st.tabs(["Master Equipment Table", "Document Inspector & Review"])
+tab_table, tab_review, tab_calc = st.tabs(["Master Equipment Table", "Document Inspector & Review", "Shell Weight & Cost Calculator"])
 
 
 def render_annexure_html_table(rows: List[Dict[str, Any]]) -> str:
@@ -930,3 +999,321 @@ with tab_review:
                     mime="application/json",
                     width="stretch",
                 )
+
+# =========================================================================
+# TAB 3: PRESSURE VESSEL SHELL WEIGHT & COST CALCULATOR
+# =========================================================================
+with tab_calc:
+    st.subheader("Pressure Vessel Shell Weight & Cost Calculator")
+    st.caption("Calculate shell plate weight and procurement cost using extracted datasheet parameters or manual input.")
+
+    # --- Auto-populate from extracted document ---
+    extracted_docs = {}
+    if st.session_state.documents:
+        for doc_id, doc in st.session_state.documents.items():
+            state = get_doc_state(doc["thread_id"])
+            if (
+                state.values.get("normalized_extraction")
+                or state.values.get("final_annex")
+                or state.values.get("extraction")
+            ):
+                extracted_docs[doc_id] = {
+                    "doc": doc,
+                    "state": state,
+                    "filename": doc["filename"],
+                }
+
+    selected_doc_for_calc = None
+    if extracted_docs:
+        doc_options = {}
+        current_inspect_id = st.session_state.get("selected_doc_id")
+
+        for doc_id, doc_data in extracted_docs.items():
+            doc_options[doc_data["filename"]] = doc_id
+        doc_options["-- Manual Entry --"] = None
+
+        default_idx = 0
+        if current_inspect_id and current_inspect_id in extracted_docs:
+            matched_fname = extracted_docs[current_inspect_id]["filename"]
+            if matched_fname in doc_options:
+                default_idx = list(doc_options.keys()).index(matched_fname)
+
+        chosen_label = st.selectbox(
+            "Auto-populate from extracted datasheet:",
+            options=list(doc_options.keys()),
+            index=default_idx,
+            key="calc_doc_selector",
+        )
+        selected_doc_for_calc = doc_options.get(chosen_label)
+    elif st.session_state.documents:
+        st.info("Uploaded datasheets are pending or extracting. Run extraction to auto-populate, or enter values manually below.")
+    else:
+        st.info("No datasheets uploaded yet. You can enter values manually below, or upload datasheets from the sidebar.")
+
+    # --- Resolve defaults from extraction ---
+    default_moc = "SA 516 GR. 70N HIC"
+    default_id = 0.0
+    default_length = 0.0
+    default_thickness = 0.0
+    default_qty = 1
+
+    if selected_doc_for_calc and selected_doc_for_calc in extracted_docs:
+        doc_item = extracted_docs[selected_doc_for_calc]
+        state = doc_item["state"]
+
+        norm: Optional[ExtractionResult] = state.values.get("normalized_extraction")
+        final_annex: Optional[dict] = state.values.get("final_annex")
+        raw_ext = state.values.get("extraction")
+
+        if norm:
+            if hasattr(norm, "moc") and norm.moc and norm.moc.value:
+                default_moc = str(norm.moc.value).strip()
+            if hasattr(norm, "vessel_id_mm") and norm.vessel_id_mm and norm.vessel_id_mm.value is not None:
+                try:
+                    default_id = float(norm.vessel_id_mm.value)
+                except (ValueError, TypeError):
+                    pass
+            if hasattr(norm, "vessel_tl_tl_length_mm") and norm.vessel_tl_tl_length_mm and norm.vessel_tl_tl_length_mm.value is not None:
+                try:
+                    default_length = float(norm.vessel_tl_tl_length_mm.value)
+                except (ValueError, TypeError):
+                    pass
+            if hasattr(norm, "shell_min_thk_mm") and norm.shell_min_thk_mm and norm.shell_min_thk_mm.value is not None:
+                try:
+                    default_thickness = float(norm.shell_min_thk_mm.value)
+                except (ValueError, TypeError):
+                    pass
+            if hasattr(norm, "qty") and norm.qty and norm.qty.value is not None:
+                try:
+                    default_qty = int(norm.qty.value)
+                except (ValueError, TypeError):
+                    pass
+
+        elif final_annex and isinstance(final_annex, dict):
+            if final_annex.get("moc"):
+                default_moc = str(final_annex["moc"]).strip()
+            if final_annex.get("vessel_id_mm") is not None:
+                try:
+                    default_id = float(final_annex["vessel_id_mm"])
+                except (ValueError, TypeError):
+                    pass
+            if final_annex.get("vessel_tl_tl_length_mm") is not None:
+                try:
+                    default_length = float(final_annex["vessel_tl_tl_length_mm"])
+                except (ValueError, TypeError):
+                    pass
+            if final_annex.get("shell_min_thk_mm") is not None:
+                try:
+                    default_thickness = float(final_annex["shell_min_thk_mm"])
+                except (ValueError, TypeError):
+                    pass
+            if final_annex.get("qty") is not None:
+                try:
+                    default_qty = int(final_annex["qty"])
+                except (ValueError, TypeError):
+                    pass
+
+        elif raw_ext:
+            if isinstance(raw_ext, dict):
+                def _extract_val(d, k):
+                    v = d.get(k)
+                    if isinstance(v, dict):
+                        return v.get("value")
+                    if hasattr(v, "value"):
+                        return v.value
+                    return v
+
+                m_val = _extract_val(raw_ext, "moc")
+                if m_val:
+                    default_moc = str(m_val).strip()
+                id_val = _extract_val(raw_ext, "vessel_id_mm")
+                if id_val is not None:
+                    try:
+                        default_id = float(id_val)
+                    except (ValueError, TypeError):
+                        pass
+                len_val = _extract_val(raw_ext, "vessel_tl_tl_length_mm") or _extract_val(raw_ext, "tl_tl_length_mm")
+                if len_val is not None:
+                    try:
+                        default_length = float(len_val)
+                    except (ValueError, TypeError):
+                        pass
+                thk_val = _extract_val(raw_ext, "shell_min_thk_mm")
+                if thk_val is not None:
+                    try:
+                        default_thickness = float(thk_val)
+                    except (ValueError, TypeError):
+                        pass
+                q_val = _extract_val(raw_ext, "qty")
+                if q_val is not None:
+                    try:
+                        default_qty = int(q_val)
+                    except (ValueError, TypeError):
+                        pass
+
+    # Automatically sync Streamlit widget session state when switching selected doc
+    if selected_doc_for_calc:
+        if st.session_state.get("_last_synced_calc_doc") != selected_doc_for_calc:
+            st.session_state["_last_synced_calc_doc"] = selected_doc_for_calc
+            st.session_state["calc_id"] = default_id
+            st.session_state["calc_length"] = default_length
+            st.session_state["calc_thickness"] = default_thickness
+            st.session_state["calc_moc"] = default_moc
+            st.session_state["calc_qty"] = default_qty
+            st.session_state["calc_bending"] = get_bending_allowance(default_thickness) if default_thickness > 0 else 1.0
+            st.session_state["calc_density"] = get_material_density(default_moc) if default_moc else 7.85
+            st.session_state["calc_rate"] = get_material_rate(default_moc) if default_moc else 2.50
+
+    st.markdown("---")
+
+    # --- Input Form ---
+    col_a, col_b = st.columns(2)
+
+    with col_a:
+        st.markdown("#### 📄 Extracted from MDS *(Constants from Data Sheet)*")
+        st.caption("Extracted directly from the Mechanical Data Sheet (MDS).")
+        calc_component = st.text_input("Component Part", value="Shell", key="calc_component", help="Source: MDS. Component part name (e.g. Shell, Head).")
+        calc_moc = st.text_input("MOC (Material of Construction)", value=default_moc, key="calc_moc", help="Source: MDS. Shell plate material grade (e.g. SA 516 GR. 70N HIC).")
+        calc_id = st.number_input("ID mm (Vessel ID)", min_value=0.0, value=default_id, step=1.0, format="%.1f", key="calc_id", help="Source: MDS. Internal diameter of the vessel in mm.")
+        calc_thickness = st.number_input("Thickness mm (Shell Min. Thk)", min_value=0.0, value=default_thickness, step=0.1, format="%.2f", key="calc_thickness", help="Source: MDS. Minimum required shell plate thickness in mm.")
+        calc_length = st.number_input("T/T Length mm (TL-TL Length)", min_value=0.0, value=default_length, step=1.0, format="%.1f", key="calc_length", help="Source: MDS. Tangent-to-tangent length of the shell in mm.")
+
+    with col_b:
+        st.markdown("#### 👤 Manufacturing & Pricing *(User Input)*")
+        st.caption("Configured and decided by the production/procurement engineer.")
+        calc_qty = st.number_input("Quantity (QTY)", min_value=1, value=default_qty, step=1, key="calc_qty", help="Source: User Input. Total number of shell plates/units to procure.")
+        calc_plate_width = st.number_input("Plate Width (mm)", min_value=0.0, value=2500.0, step=100.0, format="%.1f", key="calc_plate_width", help="Source: User Input. Standard stock raw plate width.")
+        calc_plate_length = st.number_input("Plate Length H (mm)", min_value=0.0, value=12000.0, step=100.0, format="%.1f", key="calc_plate_length", help="Source: User Input. Standard stock raw plate length H.")
+
+        # Auto-lookup bending allowance based on 40mm threshold chart
+        auto_bending = get_bending_allowance(calc_thickness) if calc_thickness > 0 else 1.0
+        calc_bending = st.number_input(
+            "Bending Allowance (mm)",
+            min_value=0.0,
+            value=auto_bending,
+            step=0.5,
+            format="%.2f",
+            key="calc_bending",
+            help="Source: User Input (Defaulted from Production Bending Allowance Chart for ≥40 mm thickness).",
+        )
+
+        # Auto-lookup density (Constant Plate sheet F2)
+        auto_density = get_material_density(calc_moc) if calc_moc else 7.85
+        calc_density = st.number_input(
+            "Plate Sheet F2 Density (kg/m²·mm)",
+            min_value=0.0,
+            value=auto_density,
+            step=0.01,
+            format="%.2f",
+            key="calc_density",
+            help="Source: Material Density Constant (e.g. 7.85 for Carbon Steel).",
+        )
+
+        # Auto-lookup rate
+        auto_rate = get_material_rate(calc_moc) if calc_moc else 2.50
+        calc_rate = st.number_input("Material Rate (per kg)", min_value=0.0, value=auto_rate, step=0.1, format="%.2f", key="calc_rate", help="Source: User Input / Market price per kg.")
+
+    st.markdown("---")
+
+    # --- Calculate ---
+    if st.button("Calculate Shell Cost", type="primary", use_container_width=True, key="calc_run"):
+        # Validate required inputs
+        errors = []
+        if calc_id <= 0:
+            errors.append("Vessel ID must be > 0")
+        if calc_length <= 0:
+            errors.append("TL-TL Length must be > 0")
+        if calc_thickness <= 0:
+            errors.append("Shell Thickness must be > 0")
+        if calc_plate_width <= 0:
+            errors.append("Plate Width must be > 0")
+        if calc_plate_length <= 0:
+            errors.append("Plate Length must be > 0")
+
+        if errors:
+            for err in errors:
+                st.error(err)
+        else:
+            try:
+                result = calculate_shell_cost({
+                    "component_part": calc_component,
+                    "vessel_id_mm": calc_id,
+                    "tl_tl_length_mm": calc_length,
+                    "shell_thickness_mm": calc_thickness,
+                    "moc": calc_moc,
+                    "qty": calc_qty,
+                    "plate_width_mm": calc_plate_width,
+                    "plate_length_h_mm": calc_plate_length,
+                    "bending_allowance_mm": calc_bending,
+                    "density_f2": calc_density,
+                    "material_rate_per_kg": calc_rate,
+                })
+
+                st.success("Calculation completed successfully!")
+
+                # Results display — spacious cards grid with zero truncation
+                st.markdown(
+                    f"""
+                    <div class="calc-card-grid">
+                        <div class="calc-result-card calc-card-blue">
+                            <div class="calc-card-label" style="color:#0369a1;">Plate Length / Shell</div>
+                            <div class="calc-card-val" style="color:#0c4a6e;">{result.plate_length_per_shell_mm:,.1f} <span style="font-size:0.95rem; font-weight:600;">mm</span></div>
+                            <div class="calc-card-sub" style="color:#0284c7;">Developed Circumference + BA</div>
+                        </div>
+                        <div class="calc-result-card calc-card-green">
+                            <div class="calc-card-label" style="color:#15803d;">Total Weight (Actual)</div>
+                            <div class="calc-card-val" style="color:#14532d;">{result.total_weight_actual_kg:,.2f} <span style="font-size:0.95rem; font-weight:600;">kg</span></div>
+                            <div class="calc-card-sub" style="color:#16a34a;">≈ {result.total_weight_actual_kg/1000:,.2f} Metric Tons</div>
+                        </div>
+                        <div class="calc-result-card calc-card-amber">
+                            <div class="calc-card-label" style="color:#a16207;">Wt Each (Single Plate)</div>
+                            <div class="calc-card-val" style="color:#713f12;">{result.wt_each_kg:,.2f} <span style="font-size:0.95rem; font-weight:600;">kg</span></div>
+                            <div class="calc-card-sub" style="color:#ca8a04;">≈ {result.wt_each_kg/1000:,.2f} Metric Tons</div>
+                        </div>
+                        <div class="calc-result-card calc-card-purple">
+                            <div class="calc-card-label" style="color:#7e22ce;">Material Weight (Total)</div>
+                            <div class="calc-card-val" style="color:#581c87;">{result.material_weight_kg:,.2f} <span style="font-size:0.95rem; font-weight:600;">kg</span></div>
+                            <div class="calc-card-sub" style="color:#9333ea;">QTY: {calc_qty} × {result.wt_each_kg:,.2f} kg</div>
+                        </div>
+                        <div class="calc-result-card calc-card-rose">
+                            <div class="calc-card-label" style="color:#be123c;">Total Material Cost</div>
+                            <div class="calc-card-val" style="color:#881337;">{result.cost:,.2f}</div>
+                            <div class="calc-card-sub" style="color:#e11d48;">@ {calc_rate:,.2f} / kg rate</div>
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+                # Step-by-step breakdown
+                with st.expander("Step-by-Step Formula Breakdown & Engineering Constants", expanded=False):
+                    st.markdown(f"""
+**Step 1 — Plate Length per Shell (mm):**
+> `(Vessel ID + Shell Thickness) × π × Bending Allowance × Constant 2 (both sides)`  
+> `({calc_id:,.1f} + {calc_thickness:,.2f}) × π × {calc_bending:,.2f} × {BENDING_SIDES_FACTOR}` = **{result.plate_length_per_shell_mm:,.2f} mm**
+
+**Step 2 — Total Weight Actual (kg):**
+> `(Plate Length × 0.001) × (TL-TL Length × 0.001) × Thickness × Plate Sheet F2 Density`  
+> `({result.plate_length_per_shell_mm:.2f} × 0.001) × ({calc_length:,.1f} × 0.001) × {calc_thickness:,.2f} × {calc_density:,.2f}` = **{result.total_weight_actual_kg:,.2f} kg**
+
+**Step 3 — Wt Each Single Plate (kg):**
+> `(Plate Width × 0.001) × (Plate Length H × 0.001) × Thickness × Density × Constant 1 (single plate)`  
+> `({calc_plate_width:,.1f} × 0.001) × ({calc_plate_length:,.1f} × 0.001) × {calc_thickness:,.2f} × {calc_density:,.2f} × {SINGLE_PLATE_FACTOR}` = **{result.wt_each_kg:,.2f} kg**
+
+**Step 4 — Material Weight (kg):**
+> `QTY (User Input) × Wt Each Plate`  
+> `{calc_qty} × {result.wt_each_kg:,.2f}` = **{result.material_weight_kg:,.2f} kg**
+
+**Step 5 — Total Procurement Cost:**
+> `Material Rate (User Input) × Material Weight`  
+> `{calc_rate:,.2f} × {result.material_weight_kg:,.2f}` = **{result.cost:,.2f}**
+
+---
+* **Constant 2**: Bending allowance on both sides of the plate roll
+* **Constant 1**: Single plate multiplier
+* **Plate Sheet F2**: Material density constant ({calc_density} kg/m²·mm for {calc_moc})
+* **User Input Fields**: QTY ({calc_qty}), Plate Width ({calc_plate_width} mm), Plate Length H ({calc_plate_length} mm), Bending Allowance ({calc_bending} mm), Material Rate ({calc_rate}/kg)
+                    """)
+
+            except Exception as e:
+                st.error(f"Calculation error: {e}")
