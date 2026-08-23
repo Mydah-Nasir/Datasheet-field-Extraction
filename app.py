@@ -1181,7 +1181,7 @@ with tab_calc:
     with col_b:
         st.markdown("#### 👤 Manufacturing & Pricing *(User Input)*")
         st.caption("Configured and decided by the production/procurement engineer.")
-        calc_qty = st.number_input("Quantity (QTY)", min_value=1, value=default_qty, step=1, key="calc_qty", help="Source: User Input. Total number of shell plates/units to procure.")
+        calc_qty = st.number_input("Add Shell Plates QTY", min_value=1, value=default_qty, step=1, key="calc_qty", help="Source: User Input. Total number of shell plates to procure.")
         calc_plate_width = st.number_input("Plate Width (mm)", min_value=0.0, value=2500.0, step=100.0, format="%.1f", key="calc_plate_width", help="Source: User Input. Standard stock raw plate width.")
         calc_plate_length = st.number_input("Plate Length H (mm)", min_value=0.0, value=12000.0, step=100.0, format="%.1f", key="calc_plate_length", help="Source: User Input. Standard stock raw plate length H.")
 
@@ -1197,10 +1197,10 @@ with tab_calc:
             help="Source: User Input (Defaulted from Production Bending Allowance Chart for ≥40 mm thickness).",
         )
 
-        # Auto-lookup density (Constant Plate sheet F2)
+        # Auto-lookup density
         auto_density = get_material_density(calc_moc) if calc_moc else 7.85
         calc_density = st.number_input(
-            "Plate Sheet F2 Density (kg/m²·mm)",
+            "Material Density (kg/m²·mm)",
             min_value=0.0,
             value=auto_density,
             step=0.01,
@@ -1211,7 +1211,7 @@ with tab_calc:
 
         # Auto-lookup rate
         auto_rate = get_material_rate(calc_moc) if calc_moc else 2.50
-        calc_rate = st.number_input("Material Rate (per kg)", min_value=0.0, value=auto_rate, step=0.1, format="%.2f", key="calc_rate", help="Source: User Input / Market price per kg.")
+        calc_rate = st.number_input("Material Rate SAR (per kg)", min_value=0.0, value=auto_rate, step=0.1, format="%.2f", key="calc_rate", help="Source: User Input / Market price in SAR per kg.")
 
     st.markdown("---")
 
@@ -1273,12 +1273,12 @@ with tab_calc:
                         <div class="calc-result-card calc-card-purple">
                             <div class="calc-card-label" style="color:#7e22ce;">Material Weight (Total)</div>
                             <div class="calc-card-val" style="color:#581c87;">{result.material_weight_kg:,.2f} <span style="font-size:0.95rem; font-weight:600;">kg</span></div>
-                            <div class="calc-card-sub" style="color:#9333ea;">QTY: {calc_qty} × {result.wt_each_kg:,.2f} kg</div>
+                            <div class="calc-card-sub" style="color:#9333ea;">Shell Plates: {calc_qty} × {result.wt_each_kg:,.2f} kg</div>
                         </div>
                         <div class="calc-result-card calc-card-rose">
                             <div class="calc-card-label" style="color:#be123c;">Total Material Cost</div>
-                            <div class="calc-card-val" style="color:#881337;">{result.cost:,.2f}</div>
-                            <div class="calc-card-sub" style="color:#e11d48;">@ {calc_rate:,.2f} / kg rate</div>
+                            <div class="calc-card-val" style="color:#881337;">{result.cost:,.2f} <span style="font-size:0.95rem; font-weight:600;">SAR</span></div>
+                            <div class="calc-card-sub" style="color:#e11d48;">@ {calc_rate:,.2f} SAR/kg rate</div>
                         </div>
                     </div>
                     """,
@@ -1289,30 +1289,30 @@ with tab_calc:
                 with st.expander("Step-by-Step Formula Breakdown & Engineering Constants", expanded=False):
                     st.markdown(f"""
 **Step 1 — Plate Length per Shell (mm):**
-> `(Vessel ID + Shell Thickness) × π × Bending Allowance × Constant 2 (both sides)`  
-> `({calc_id:,.1f} + {calc_thickness:,.2f}) × π × {calc_bending:,.2f} × {BENDING_SIDES_FACTOR}` = **{result.plate_length_per_shell_mm:,.2f} mm**
+> `(Vessel ID + Shell Thickness) × π + (Bending Allowance × Constant 2 (both sides))`  
+> `({calc_id:,.1f} + {calc_thickness:,.2f}) × π + ({calc_bending:,.2f} × {BENDING_SIDES_FACTOR})` = **{result.plate_length_per_shell_mm:,.2f} mm**
 
 **Step 2 — Total Weight Actual (kg):**
-> `(Plate Length × 0.001) × (TL-TL Length × 0.001) × Thickness × Plate Sheet F2 Density`  
+> `(Plate Length × 0.001) × (TL-TL Length × 0.001) × Thickness × Material Density`  
 > `({result.plate_length_per_shell_mm:.2f} × 0.001) × ({calc_length:,.1f} × 0.001) × {calc_thickness:,.2f} × {calc_density:,.2f}` = **{result.total_weight_actual_kg:,.2f} kg**
 
 **Step 3 — Wt Each Single Plate (kg):**
-> `(Plate Width × 0.001) × (Plate Length H × 0.001) × Thickness × Density × Constant 1 (single plate)`  
+> `(Plate Width × 0.001) × (Plate Length H × 0.001) × Thickness × Material Density × Constant 1 (single plate)`  
 > `({calc_plate_width:,.1f} × 0.001) × ({calc_plate_length:,.1f} × 0.001) × {calc_thickness:,.2f} × {calc_density:,.2f} × {SINGLE_PLATE_FACTOR}` = **{result.wt_each_kg:,.2f} kg**
 
 **Step 4 — Material Weight (kg):**
-> `QTY (User Input) × Wt Each Plate`  
+> `Shell Plates QTY (User Input) × Wt Each Plate`  
 > `{calc_qty} × {result.wt_each_kg:,.2f}` = **{result.material_weight_kg:,.2f} kg**
 
-**Step 5 — Total Procurement Cost:**
-> `Material Rate (User Input) × Material Weight`  
-> `{calc_rate:,.2f} × {result.material_weight_kg:,.2f}` = **{result.cost:,.2f}**
+**Step 5 — Total Procurement Cost (SAR):**
+> `Material Rate SAR (User Input) × Material Weight`  
+> `{calc_rate:,.2f} SAR/kg × {result.material_weight_kg:,.2f} kg` = **{result.cost:,.2f} SAR**
 
 ---
 * **Constant 2**: Bending allowance on both sides of the plate roll
 * **Constant 1**: Single plate multiplier
-* **Plate Sheet F2**: Material density constant ({calc_density} kg/m²·mm for {calc_moc})
-* **User Input Fields**: QTY ({calc_qty}), Plate Width ({calc_plate_width} mm), Plate Length H ({calc_plate_length} mm), Bending Allowance ({calc_bending} mm), Material Rate ({calc_rate}/kg)
+* **Material Density**: Material density constant ({calc_density} kg/m²·mm for {calc_moc})
+* **User Input Fields**: Shell Plates QTY ({calc_qty}), Plate Width ({calc_plate_width} mm), Plate Length H ({calc_plate_length} mm), Bending Allowance ({calc_bending} mm), Material Rate ({calc_rate} SAR/kg)
                     """)
 
             except Exception as e:
