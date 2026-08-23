@@ -45,11 +45,16 @@ def extract_parameters_node(state: ExtractionState) -> dict:
 
 
 def normalize_parameters_node(state: ExtractionState) -> dict:
-    """Normalize extracted fields (units, booleans, enums)."""
+    """Deterministically clean, parse, and normalize all extracted values."""
     if state.get("error"):
         return {}
 
     extraction = state["extraction"]
+    if isinstance(extraction, dict):
+        extraction = ExtractionResult.model_validate(extraction)
+    elif hasattr(extraction, "model_dump") and not isinstance(extraction, ExtractionResult):
+        extraction = ExtractionResult.model_validate(extraction.model_dump())
+
     normalizer = Normalizer()
 
     try:
@@ -104,6 +109,8 @@ def validate_parameters_node(state: ExtractionState) -> dict:
     normalized = state["normalized_extraction"]
     if isinstance(normalized, dict):
         normalized = ExtractionResult.model_validate(normalized)
+    elif hasattr(normalized, "model_dump") and not isinstance(normalized, ExtractionResult):
+        normalized = ExtractionResult.model_validate(normalized.model_dump())
 
     validator = Validator()
 
@@ -123,6 +130,8 @@ def human_review_node(state: ExtractionState) -> dict:
     normalized = state["normalized_extraction"]
     if isinstance(normalized, dict):
         normalized = ExtractionResult.model_validate(normalized)
+    elif hasattr(normalized, "model_dump") and not isinstance(normalized, ExtractionResult):
+        normalized = ExtractionResult.model_validate(normalized.model_dump())
 
     # Build review payload for ALL fields (not just flagged ones)
     fields_for_review = []
@@ -224,6 +233,8 @@ def apply_human_decision_node(state: ExtractionState) -> dict:
     normalized = state["normalized_extraction"]
     if isinstance(normalized, dict):
         normalized = ExtractionResult.model_validate(normalized)
+    elif hasattr(normalized, "model_dump") and not isinstance(normalized, ExtractionResult):
+        normalized = ExtractionResult.model_validate(normalized.model_dump())
 
     if decision_list:
         for decision in decision_list:
@@ -299,6 +310,8 @@ def finalize_annex_node(state: ExtractionState) -> dict:
     normalized = state["normalized_extraction"]
     if isinstance(normalized, dict):
         normalized = ExtractionResult.model_validate(normalized)
+    elif hasattr(normalized, "model_dump") and not isinstance(normalized, ExtractionResult):
+        normalized = ExtractionResult.model_validate(normalized.model_dump())
 
     try:
         annexure_record = build_annexure(normalized)
