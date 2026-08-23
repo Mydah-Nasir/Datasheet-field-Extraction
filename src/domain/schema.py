@@ -42,9 +42,7 @@ class ExtractionField(BaseModel, Generic[T]):
 
     value: T | None = Field(default=None, description="The extracted or normalized value")
     status: FieldStatus = Field(description="The current state of this field")
-    confidence: float = Field(
-        description="Extraction confidence score between 0.0 and 1.0"
-    )
+    confidence: float = Field(description="Extraction confidence score between 0.0 and 1.0")
     evidence: list[Evidence] = Field(
         default_factory=list, description="List of evidence items supporting this value"
     )
@@ -102,7 +100,9 @@ class ExtractionResult(BaseModel):
     painting: PaintingField
     # 19. Pickling & Passivation / Preservation
     pickling_passivation: ExtractionField[str] = Field(
-        default_factory=lambda: ExtractionField(value="N/A", status=FieldStatus.NORMALIZED, confidence=1.0),
+        default_factory=lambda: ExtractionField(
+            value="N/A", status=FieldStatus.NORMALIZED, confidence=1.0
+        ),
         description="Pickling & Passivation / Preservation specification (e.g., 'N/A', 'Required', specific spec, or N/A)",
     )
     # 20. WT-Tons (Each) (Approx.)

@@ -160,6 +160,7 @@ def test_idempotence(base_extraction):
 def test_normalize_head_min_thickness(base_extraction):
     """Test that HEAD TH. 29 (MIN. 22.88) extracts the MINIMUM thickness (22.88) even if LLM provided nominal 29."""
     from src.domain.schema import Evidence
+
     normalizer = Normalizer()
 
     # Scenario 1: LLM extracted nominal 29.0, but evidence has MIN. 22.88
@@ -204,7 +205,7 @@ def test_boolean_evidence_contradiction():
         value="YES",
         status=FieldStatus.EXTRACTED,
         confidence=0.8,
-        evidence=[Evidence(page=2, text="IMPACT TESTING (IT): ◯ YES ◉ NO ☑ CODE")]
+        evidence=[Evidence(page=2, text="IMPACT TESTING (IT): ◯ YES ◉ NO ☑ CODE")],
     )
     suggested = GeminiExtractionService._check_evidence_contradiction(field_impact)
     assert suggested == "NO"
@@ -214,7 +215,7 @@ def test_boolean_evidence_contradiction():
         value="NO",
         status=FieldStatus.EXTRACTED,
         confidence=0.8,
-        evidence=[Evidence(page=2, text="PWHT: ◉ YES ◯ NO ☐ CODE ☑ SERVICE")]
+        evidence=[Evidence(page=2, text="PWHT: ◉ YES ◯ NO ☐ CODE ☑ SERVICE")],
     )
     suggested_pwht = GeminiExtractionService._check_evidence_contradiction(field_pwht)
     assert suggested_pwht == "YES"
@@ -234,11 +235,15 @@ def test_normalize_nozzle_type(base_extraction):
     normalizer = Normalizer()
 
     # Scenario 1: Complete specification with pressure classes, designations, and standards
-    base_extraction.nozzle_type.value = "150# RFSRWN, 300# RFSRWN, 150# RFLWN, 300# RFLWN, B16.47 SERIES A"
+    base_extraction.nozzle_type.value = (
+        "150# RFSRWN, 300# RFSRWN, 150# RFLWN, 300# RFLWN, B16.47 SERIES A"
+    )
     base_extraction.nozzle_type.status = FieldStatus.EXTRACTED
 
     res = normalizer.normalize(base_extraction)
-    assert res.nozzle_type.value == "150# RFSRWN, 300# RFSRWN, 150# RFLWN, 300# RFLWN, B16.47 SERIES A"
+    assert (
+        res.nozzle_type.value == "150# RFSRWN, 300# RFSRWN, 150# RFLWN, 300# RFLWN, B16.47 SERIES A"
+    )
     assert res.nozzle_type.status == FieldStatus.NORMALIZED
 
     # Scenario 2: Whitespace and separator noise (semicolons, newlines, extra spaces)
@@ -250,7 +255,9 @@ def test_normalize_nozzle_type(base_extraction):
     assert res2.nozzle_type.status == FieldStatus.NORMALIZED
 
     # Scenario 3: Deduplication of duplicate entries across multiple rows
-    base_extraction.nozzle_type.value = "150# RFSRWN, 150# RFSRWN, 300# RFLWN, 150# RFSRWN, B16.47 SERIES A"
+    base_extraction.nozzle_type.value = (
+        "150# RFSRWN, 150# RFSRWN, 300# RFLWN, 150# RFSRWN, B16.47 SERIES A"
+    )
     base_extraction.nozzle_type.status = FieldStatus.EXTRACTED
 
     res3 = normalizer.normalize(base_extraction)
@@ -263,29 +270,134 @@ def test_recover_values_from_evidence():
     normalizer = Normalizer()
 
     extraction = ExtractionResult(
-        tag_no=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="TAG NO: V-202")]),
-        description=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="FLARE KNOCKOUT DRUM")]),
-        ref_data_sheet=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="SD-8500-13513-0001")]),
-        design_code=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="ASME SEC VIII DIV 1")]),
-        moc=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="SA 516 GR 70N")]),
-        qty=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="QTY: 2 UNITS")]),
-        orientation=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="HORIZONTAL VESSEL")]),
-        vessel_id_mm=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="ID 3200 mm")]),
-        vessel_tl_tl_length_mm=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="T/T LENGTH: 14500 mm")]),
-        shell_min_thk_mm=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="SHELL THK. 25.4 mm (MIN. 22.0 mm)")]),
-        head_min_thk_mm=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="HEAD THK 18 mm")]),
-        head_type=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="2:1 ELLIPSOIDAL")]),
-        nozzle_type=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="150# RFSRWN, 300# RFLWN")]),
-        impact_tested=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="IMPACT TESTING: ◯ YES ◉ NO")]),
-        rt=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="RT-1 100%")]),
-        pwht=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="PWHT: ◉ YES ◯ NO")]),
-        support_type=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="SADDLE & PAD")]),
-        painting=PaintingField(
-            external=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="APCS-1B")]),
-            internal=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="NONE")]),
+        tag_no=ExtractionField(
+            value=None,
+            status=FieldStatus.EXTRACTED,
+            confidence=0.7,
+            evidence=[Evidence(page=1, text="TAG NO: V-202")],
         ),
-        pickling_passivation=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="APCS-104")]),
-        weight_tons_each=ExtractionField(value=None, status=FieldStatus.EXTRACTED, confidence=0.7, evidence=[Evidence(page=1, text="OPERATING WEIGHT: 85,000 kg")]),
+        description=ExtractionField(
+            value=None,
+            status=FieldStatus.EXTRACTED,
+            confidence=0.7,
+            evidence=[Evidence(page=1, text="FLARE KNOCKOUT DRUM")],
+        ),
+        ref_data_sheet=ExtractionField(
+            value=None,
+            status=FieldStatus.EXTRACTED,
+            confidence=0.7,
+            evidence=[Evidence(page=1, text="SD-8500-13513-0001")],
+        ),
+        design_code=ExtractionField(
+            value=None,
+            status=FieldStatus.EXTRACTED,
+            confidence=0.7,
+            evidence=[Evidence(page=1, text="ASME SEC VIII DIV 1")],
+        ),
+        moc=ExtractionField(
+            value=None,
+            status=FieldStatus.EXTRACTED,
+            confidence=0.7,
+            evidence=[Evidence(page=1, text="SA 516 GR 70N")],
+        ),
+        qty=ExtractionField(
+            value=None,
+            status=FieldStatus.EXTRACTED,
+            confidence=0.7,
+            evidence=[Evidence(page=1, text="QTY: 2 UNITS")],
+        ),
+        orientation=ExtractionField(
+            value=None,
+            status=FieldStatus.EXTRACTED,
+            confidence=0.7,
+            evidence=[Evidence(page=1, text="HORIZONTAL VESSEL")],
+        ),
+        vessel_id_mm=ExtractionField(
+            value=None,
+            status=FieldStatus.EXTRACTED,
+            confidence=0.7,
+            evidence=[Evidence(page=1, text="ID 3200 mm")],
+        ),
+        vessel_tl_tl_length_mm=ExtractionField(
+            value=None,
+            status=FieldStatus.EXTRACTED,
+            confidence=0.7,
+            evidence=[Evidence(page=1, text="T/T LENGTH: 14500 mm")],
+        ),
+        shell_min_thk_mm=ExtractionField(
+            value=None,
+            status=FieldStatus.EXTRACTED,
+            confidence=0.7,
+            evidence=[Evidence(page=1, text="SHELL THK. 25.4 mm (MIN. 22.0 mm)")],
+        ),
+        head_min_thk_mm=ExtractionField(
+            value=None,
+            status=FieldStatus.EXTRACTED,
+            confidence=0.7,
+            evidence=[Evidence(page=1, text="HEAD THK 18 mm")],
+        ),
+        head_type=ExtractionField(
+            value=None,
+            status=FieldStatus.EXTRACTED,
+            confidence=0.7,
+            evidence=[Evidence(page=1, text="2:1 ELLIPSOIDAL")],
+        ),
+        nozzle_type=ExtractionField(
+            value=None,
+            status=FieldStatus.EXTRACTED,
+            confidence=0.7,
+            evidence=[Evidence(page=1, text="150# RFSRWN, 300# RFLWN")],
+        ),
+        impact_tested=ExtractionField(
+            value=None,
+            status=FieldStatus.EXTRACTED,
+            confidence=0.7,
+            evidence=[Evidence(page=1, text="IMPACT TESTING: ◯ YES ◉ NO")],
+        ),
+        rt=ExtractionField(
+            value=None,
+            status=FieldStatus.EXTRACTED,
+            confidence=0.7,
+            evidence=[Evidence(page=1, text="RT-1 100%")],
+        ),
+        pwht=ExtractionField(
+            value=None,
+            status=FieldStatus.EXTRACTED,
+            confidence=0.7,
+            evidence=[Evidence(page=1, text="PWHT: ◉ YES ◯ NO")],
+        ),
+        support_type=ExtractionField(
+            value=None,
+            status=FieldStatus.EXTRACTED,
+            confidence=0.7,
+            evidence=[Evidence(page=1, text="SADDLE & PAD")],
+        ),
+        painting=PaintingField(
+            external=ExtractionField(
+                value=None,
+                status=FieldStatus.EXTRACTED,
+                confidence=0.7,
+                evidence=[Evidence(page=1, text="APCS-1B")],
+            ),
+            internal=ExtractionField(
+                value=None,
+                status=FieldStatus.EXTRACTED,
+                confidence=0.7,
+                evidence=[Evidence(page=1, text="NONE")],
+            ),
+        ),
+        pickling_passivation=ExtractionField(
+            value=None,
+            status=FieldStatus.EXTRACTED,
+            confidence=0.7,
+            evidence=[Evidence(page=1, text="APCS-104")],
+        ),
+        weight_tons_each=ExtractionField(
+            value=None,
+            status=FieldStatus.EXTRACTED,
+            confidence=0.7,
+            evidence=[Evidence(page=1, text="OPERATING WEIGHT: 85,000 kg")],
+        ),
     )
 
     res = normalizer.normalize(extraction)
@@ -322,7 +434,12 @@ def test_normalize_weight_fabricated_vs_empty():
         value=None,
         status=FieldStatus.EXTRACTED,
         confidence=0.9,
-        evidence=[Evidence(page=1, text="EMPTY WEIGHT: 380,000 KG. FABRICATED WEIGHT: 418,000 KG. OPERATING WEIGHT: 520,000 KG.")],
+        evidence=[
+            Evidence(
+                page=1,
+                text="EMPTY WEIGHT: 380,000 KG. FABRICATED WEIGHT: 418,000 KG. OPERATING WEIGHT: 520,000 KG.",
+            )
+        ],
     )
     normalizer._normalize_weight(field_both)
     assert field_both.value == 418.0
@@ -360,7 +477,9 @@ def test_normalize_drawing_callout_patterns():
         value=None,
         status=FieldStatus.EXTRACTED,
         confidence=0.9,
-        evidence=[Evidence(page=10, text='2:1 ELLIPSOIDAL HEAD 26 [1.024"] MIN. THK. AFTER FORMING')],
+        evidence=[
+            Evidence(page=10, text='2:1 ELLIPSOIDAL HEAD 26 [1.024"] MIN. THK. AFTER FORMING')
+        ],
     )
     normalizer._normalize_thickness(head_field)
     assert head_field.value == 26.0
@@ -382,7 +501,7 @@ def test_normalize_drawing_callout_patterns():
         value=None,
         status=FieldStatus.EXTRACTED,
         confidence=0.9,
-        evidence=[Evidence(page=10, text='32207.2 [105\'-8"] T.L. TO T.L.')],
+        evidence=[Evidence(page=10, text="32207.2 [105'-8\"] T.L. TO T.L.")],
     )
     normalizer._normalize_numeric(tl_field, "mm")
     assert tl_field.value == 32207.2
@@ -393,11 +512,8 @@ def test_normalize_drawing_callout_patterns():
         value=None,
         status=FieldStatus.EXTRACTED,
         confidence=0.9,
-        evidence=[Evidence(page=10, text='6200 [20\'-4 1/8"] I.D.')],
+        evidence=[Evidence(page=10, text="6200 [20'-4 1/8\"] I.D.")],
     )
     normalizer._normalize_numeric(id_field, "mm")
     assert id_field.value == 6200.0
     assert id_field.status == FieldStatus.NORMALIZED
-
-
-

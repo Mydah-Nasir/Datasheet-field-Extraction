@@ -1,7 +1,7 @@
 """Integration tests for the Streamlit UI lifecycle."""
 
 import os
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from streamlit.testing.v1 import AppTest
@@ -32,6 +32,7 @@ def test_real_mode_without_api_key(app):
         # We need to simulate uploading a file to trigger the extraction
         class DummyUploadedFile:
             name = "test.pdf"
+
             def getbuffer(self):
                 return b"dummy pdf content"
 
@@ -81,8 +82,14 @@ def test_mock_mode_hitl_lifecycle(app):
     # AppTest doesn't let us easily mock file_uploader bytes, but we can set the session state and just invoke the button.
     # Actually, the button is rendered when `uploaded_file is not None`.
 
-    pdf_path = os.path.join(os.path.dirname(__file__), "..", "..", "example_pdfs", "(Datasheet WOSEP) SD-8500-13513-0001_0F1_001.pdf")
-    
+    pdf_path = os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "..",
+        "example_pdfs",
+        "(Datasheet WOSEP) SD-8500-13513-0001_0F1_001.pdf",
+    )
+
     with patch("app.st.file_uploader") as mock_uploader:
         mock_file = MagicMock()
         mock_file.name = "test.pdf"

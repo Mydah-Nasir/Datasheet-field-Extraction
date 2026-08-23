@@ -18,7 +18,7 @@ def _create_mock_field(value, status=FieldStatus.NORMALIZED, confidence=0.9):
         value=value,
         status=status,
         confidence=confidence,
-        evidence=[Evidence(page=1, text=str(value))]
+        evidence=[Evidence(page=1, text=str(value))],
     )
 
 
@@ -43,10 +43,9 @@ def create_valid_extraction_result():
         pwht=_create_mock_field("YES"),
         support_type=_create_mock_field("Skirt"),
         painting=PaintingField(
-            external=_create_mock_field("System 1"),
-            internal=_create_mock_field("System 2")
+            external=_create_mock_field("System 1"), internal=_create_mock_field("System 2")
         ),
-        weight_tons_each=_create_mock_field(15.5)
+        weight_tons_each=_create_mock_field(15.5),
     )
 
 

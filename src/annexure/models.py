@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 class AnnexureRecord(BaseModel):
     """A strongly typed representation of the final engineering Annexure.
-    
+
     This model contains cleanly typed raw values representing the 19 engineering parameters,
     with painting flattened into external and internal, resulting in 20 total columns.
     It deliberately does not contain ExtractionField objects, confidences, or internal metadata.

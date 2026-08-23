@@ -4,7 +4,6 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 
-from src.domain.validation import ValidationStatus
 from src.graph.nodes import (
     apply_human_decision_node,
     extract_parameters_node,
@@ -19,7 +18,7 @@ from src.graph.state import ExtractionState
 
 def route_after_validation(state: ExtractionState) -> str:
     """Determine the next step based on validation status.
-    
+
     Routes to human review on initial pass, and to finalize_annex once approved.
     """
     if state.get("error"):
@@ -30,6 +29,7 @@ def route_after_validation(state: ExtractionState) -> str:
         val_result = state.get("validation_result")
         if val_result:
             from src.domain.validation import ValidationSeverity
+
             has_fatal_error = any(i.severity == ValidationSeverity.ERROR for i in val_result.issues)
             if not has_fatal_error:
                 return "valid"

@@ -4,12 +4,12 @@ import json
 import logging
 import re
 import time
-from tenacity import retry, stop_after_attempt, wait_exponential
 
 # We are using the recommended google-genai SDK
 import google.genai as genai
 from google.genai import types
 from pydantic import ValidationError
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 from src.config import settings
 from src.document import IngestedDocument
@@ -122,7 +122,7 @@ class GeminiExtractionService:
     @retry(
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=2, min=4, max=20),
-        reraise=True
+        reraise=True,
     )
     def extract(self, document: IngestedDocument) -> ExtractionResult:
         """Extract parameters from an ingested document using Gemini."""
@@ -136,9 +136,11 @@ class GeminiExtractionService:
             uploaded_file = self.client.files.upload(
                 file=document.file_path,
                 config=types.UploadFileConfig(
-                    mime_type="application/pdf"
-                    if document.metadata.file_extension.lower() == "pdf"
-                    else None
+                    mime_type=(
+                        "application/pdf"
+                        if document.metadata.file_extension.lower() == "pdf"
+                        else None
+                    )
                 ),
             )
 
@@ -172,7 +174,7 @@ class GeminiExtractionService:
                 "1. If this is a multi-page drawing package (e.g. 5 to 30+ pages), scan ALL pages thoroughly. "
                 "2. Physical vessel geometry (VESSEL_ID_MM, VESSEL_TL_TL_LENGTH_MM, SHELL_MIN_THK_MM, HEAD_MIN_THK_MM, HEAD_TYPE) "
                 "are often located directly on the General Arrangement (GA) or Elevation view drawings (e.g. on pages 4 to 15). "
-                "3. Look for standard drawing callout patterns such as '6200 [20\'-4 1/8\"] I.D.', '32207.2 [105\'-8\"] T.L. TO T.L.', "
+                "3. Look for standard drawing callout patterns such as '6200 [20'-4 1/8\"] I.D.', '32207.2 [105'-8\"] T.L. TO T.L.', "
                 "'... x 28.6 [1.126\"] THK.', and '2:1 ELLIPSOIDAL HEAD / 26 [1.024\"] MIN. THK. AFTER FORMING'. "
                 "4. For HEAD_MIN_THK_MM and HEAD_TYPE: Extract from the primary 2:1 ellipsoidal outer vessel closure head callout (e.g. 26 mm). Do NOT extract from internal baffles or secondary components that say 22 mm. "
                 "5. Always extract the metric dimension (in mm). "
@@ -248,11 +250,11 @@ class GeminiExtractionService:
         if not field.evidence:
             return None
 
-        value_upper = field.value.strip().upper() if (field.value and isinstance(field.value, str)) else ""
+        value_upper = (
+            field.value.strip().upper() if (field.value and isinstance(field.value, str)) else ""
+        )
         # Combine all evidence text
         evidence_text = " ".join(e.text for e in field.evidence if e.text)
-
-        import re
 
         # Strict radio-button / checkbox pair patterns
         # 1. (empty YES) followed by (selected NO) -> unequivocally NO
@@ -273,12 +275,8 @@ class GeminiExtractionService:
             return "YES" if value_upper != "YES" else None
 
         # Direct explicit markers (e.g. "◉ NO", "☑ NO", "IMPACT TEST: NO")
-        no_direct = (
-            r"(?:(?:◉|●|⦿|☑|☒|\[[xX•*]\]|\([•*xX]\))\s*NO\b|\bNO\s*(?:◉|●|⦿|☑|☒|\[[xX•*]\]|\([•*xX]\))|(?<!\()\b(?:IT|IMPACT\s*TEST(?:ING|ED)?|PWHT)\s*[:=\-]\s*NO\b)"
-        )
-        yes_direct = (
-            r"(?:(?:◉|●|⦿|☑|☒|\[[xX•*]\]|\([•*xX]\))\s*YES\b|\bYES\s*(?:◉|●|⦿|☑|☒|\[[xX•*]\]|\([•*xX]\))|(?<!\()\b(?:IT|IMPACT\s*TEST(?:ING|ED)?|PWHT)\s*[:=\-]\s*YES\b)"
-        )
+        no_direct = r"(?:(?:◉|●|⦿|☑|☒|\[[xX•*]\]|\([•*xX]\))\s*NO\b|\bNO\s*(?:◉|●|⦿|☑|☒|\[[xX•*]\]|\([•*xX]\))|(?<!\()\b(?:IT|IMPACT\s*TEST(?:ING|ED)?|PWHT)\s*[:=\-]\s*NO\b)"
+        yes_direct = r"(?:(?:◉|●|⦿|☑|☒|\[[xX•*]\]|\([•*xX]\))\s*YES\b|\bYES\s*(?:◉|●|⦿|☑|☒|\[[xX•*]\]|\([•*xX]\))|(?<!\()\b(?:IT|IMPACT\s*TEST(?:ING|ED)?|PWHT)\s*[:=\-]\s*YES\b)"
 
         evidence_suggests_no = bool(re.search(no_direct, evidence_text, re.IGNORECASE))
         evidence_suggests_yes = bool(re.search(yes_direct, evidence_text, re.IGNORECASE))
@@ -348,16 +346,17 @@ class GeminiExtractionService:
         if not votes:
             return ("", 0.0)
         from collections import Counter
-        counts = Counter(str(v).strip().upper() for v in votes if v and str(v).strip().upper() in ("YES", "NO"))
+
+        counts = Counter(
+            str(v).strip().upper() for v in votes if v and str(v).strip().upper() in ("YES", "NO")
+        )
         if not counts:
             return ("", 0.0)
         winner, winner_count = counts.most_common(1)[0]
         agreement = winner_count / len(votes)
         return (winner, agreement)
 
-    def _verify_boolean_fields(
-        self, uploaded_file, result: ExtractionResult
-    ) -> ExtractionResult:
+    def _verify_boolean_fields(self, uploaded_file, result: ExtractionResult) -> ExtractionResult:
         """Run multi-pass verification on impact_tested and pwht.
 
         1. Checks evidence text for direct contradictions with extracted value
@@ -367,14 +366,11 @@ class GeminiExtractionService:
         """
         try:
             logger.info(
-                f"Running multi-pass boolean verification "
-                f"({_BOOLEAN_VERIFY_VOTES} votes)..."
+                f"Running multi-pass boolean verification ({_BOOLEAN_VERIFY_VOTES} votes)..."
             )
 
             # --- Step 1: Evidence cross-check ---
-            evidence_suggests_impact = self._check_evidence_contradiction(
-                result.impact_tested
-            )
+            evidence_suggests_impact = self._check_evidence_contradiction(result.impact_tested)
             evidence_suggests_pwht = self._check_evidence_contradiction(result.pwht)
 
             if evidence_suggests_impact:
@@ -409,11 +405,9 @@ class GeminiExtractionService:
                     # Collect reasoning for logging
                     reasoning = parsed.get("impact_tested_reasoning", "")
                     if reasoning:
-                        all_reasoning.append(f"Vote {i+1}: {reasoning}")
+                        all_reasoning.append(f"Vote {i + 1}: {reasoning}")
 
-            logger.info(
-                f"Verification votes — impact_tested: {impact_votes}, pwht: {pwht_votes}"
-            )
+            logger.info(f"Verification votes — impact_tested: {impact_votes}, pwht: {pwht_votes}")
 
             # --- Step 3: Majority vote ---
             impact_winner, impact_agreement = self._majority_vote(impact_votes)
@@ -449,8 +443,7 @@ class GeminiExtractionService:
             # If verification fails entirely, lower confidence on boolean fields
             # to force human review rather than silently passing wrong values
             logger.warning(
-                f"Boolean verification failed — lowering confidence to force "
-                f"human review: {e}"
+                f"Boolean verification failed — lowering confidence to force human review: {e}"
             )
             result.impact_tested.confidence = min(result.impact_tested.confidence, 0.5)
             result.pwht.confidence = min(result.pwht.confidence, 0.5)
@@ -477,13 +470,21 @@ class GeminiExtractionService:
         - If evidence cross-check disagrees but votes agree with first-pass → flag as AMBIGUOUS
         - If everything agrees → keep value, maintain confidence
         """
+        field = getattr(result, field_name)
+
         if not current_value:
-            resolved = vote_winner if (vote_winner and vote_winner in ("YES", "NO")) else evidence_suggestion
+            resolved = (
+                vote_winner
+                if (vote_winner and vote_winner in ("YES", "NO"))
+                else evidence_suggestion
+            )
             if resolved:
                 field.value = resolved
                 field.confidence = 0.85 if vote_agreement >= 0.67 else 0.70
                 field.status = FieldStatus.EXTRACTED
-                logger.info(f"Populated missing {field_name} with '{resolved}' from verification/evidence.")
+                logger.info(
+                    f"Populated missing {field_name} with '{resolved}' from verification/evidence."
+                )
             elif vote_count > 0:
                 field.confidence = min(field.confidence, 0.5)
             return result
@@ -497,9 +498,10 @@ class GeminiExtractionService:
             )
             return result
 
-        votes_agree_with_first_pass = (vote_winner == current_value)
-        evidence_disagrees = (evidence_suggestion is not None and
-                              evidence_suggestion != current_value)
+        votes_agree_with_first_pass = vote_winner == current_value
+        evidence_disagrees = (
+            evidence_suggestion is not None and evidence_suggestion != current_value
+        )
 
         if votes_agree_with_first_pass and not evidence_disagrees:
             # All signals agree — high confidence in original value
@@ -566,4 +568,3 @@ class GeminiExtractionService:
             field.confidence = min(field.confidence, 0.65)
 
         return result
-

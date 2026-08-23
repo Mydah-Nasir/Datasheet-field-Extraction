@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Mapping, Optional
+from collections.abc import Mapping
+from typing import Any
 
 from src.calculator.lookups import CalculatorLookups
 from src.calculator.models import ShellCalculationInput, ShellCalculationResult
@@ -12,7 +13,7 @@ from src.calculator.models import ShellCalculationInput, ShellCalculationResult
 # CONSTANTS
 # =============================================================================
 BENDING_SIDES_FACTOR: float = 2.0  # Bending allowance applies to both sides of the plate
-SINGLE_PLATE_FACTOR: float = 1.0   # Used when calculating a single plate
+SINGLE_PLATE_FACTOR: float = 1.0  # Used when calculating a single plate
 
 
 # =============================================================================
@@ -21,22 +22,22 @@ SINGLE_PLATE_FACTOR: float = 1.0   # Used when calculating a single plate
 def calculate_plate_length_per_shell(
     vessel_id_mm: float,
     shell_thickness_mm: float,
-    bending_allowance_mm: float = 1.0,
+    bending_allowance_mm: float = 0.0,
     bending_sides_factor: float = BENDING_SIDES_FACTOR,
 ) -> float:
     r"""Calculate the required developed plate length per shell cylinder course.
 
     Formula:
-        plate_length_per_shell_mm = (vessel_id_mm + shell_thickness_mm) * pi * bending_allowance_mm * bending_sides_factor
+        plate_length_per_shell_mm = (vessel_id_mm + shell_thickness_mm) * pi + (bending_allowance_mm * bending_sides_factor)
 
     Units:
         vessel_id_mm: Internal diameter (ID) in millimeters (mm)
         shell_thickness_mm: Minimum shell thickness in millimeters (mm)
-        bending_allowance_mm: Allowance per edge in millimeters (mm)
+        bending_allowance_mm: Allowance per edge in millimeters (mm) (default: 0.0)
         bending_sides_factor: Number of edges receiving allowance (default: 2)
 
     Returns:
-        float: Developed plate circumference * bending allowance in mm
+        float: Developed plate circumference + bending allowance in mm
     """
     if vessel_id_mm <= 0:
         raise ValueError(f"vessel_id_mm must be > 0, got {vessel_id_mm}")
@@ -45,7 +46,10 @@ def calculate_plate_length_per_shell(
     if bending_allowance_mm < 0:
         raise ValueError(f"bending_allowance_mm must be >= 0, got {bending_allowance_mm}")
 
-    return (vessel_id_mm + shell_thickness_mm) * math.pi * bending_allowance_mm * bending_sides_factor
+    return (
+        (vessel_id_mm + shell_thickness_mm) * math.pi
+        + (bending_allowance_mm * bending_sides_factor)
+    )
 
 
 # =============================================================================
@@ -181,7 +185,7 @@ def calculate_cost(material_rate_per_kg: float, material_weight_kg: float) -> fl
 # =============================================================================
 def calculate_shell_cost(
     record: ShellCalculationInput | Mapping[str, Any],
-    lookups: Optional[CalculatorLookups] = None,
+    lookups: CalculatorLookups | None = None,
 ) -> ShellCalculationResult:
     """Execute the full 5-step shell weight & cost calculation with dependency injection.
 

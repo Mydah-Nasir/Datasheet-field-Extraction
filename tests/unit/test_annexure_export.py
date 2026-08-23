@@ -33,7 +33,7 @@ def create_mock_records():
             support_type="Skirt",
             painting_external="System 1",
             painting_internal="System 2",
-            weight_tons_each=15.5
+            weight_tons_each=15.5,
         ),
         AnnexureRecord(
             tag_no="V-102",
@@ -55,8 +55,8 @@ def create_mock_records():
             support_type="Saddle",
             painting_external="System 3",
             painting_internal="None",
-            weight_tons_each=5.0
-        )
+            weight_tons_each=5.0,
+        ),
     ]
 
 

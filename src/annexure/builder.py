@@ -6,12 +6,13 @@ from src.domain.schema import ExtractionResult, FieldStatus
 
 class AnnexureExportError(Exception):
     """Raised when an ExtractionResult is not eligible for export."""
+
     pass
 
 
 def validate_for_export(result: ExtractionResult) -> None:
     """Check if the final result is eligible for export.
-    
+
     Raises:
         AnnexureExportError: If any field is MISSING, AMBIGUOUS, INVALID, or CONFLICT.
     """

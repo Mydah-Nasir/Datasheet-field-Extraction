@@ -71,9 +71,21 @@ class Validator:
 
         # 2.5 Engineering plausibility checks (catch unit-conversion errors)
         engineering_ranges = {
-            "weight_tons_each": (1, 10000, "Weight in tons should be between 1 and 10,000 for pressure vessels. Possible unit-conversion error."),
-            "vessel_id_mm": (100, 20000, "Vessel ID should be between 100mm and 20,000mm for typical pressure vessels."),
-            "vessel_tl_tl_length_mm": (500, 200000, "Vessel length should be between 500mm and 200,000mm."),
+            "weight_tons_each": (
+                1,
+                10000,
+                "Weight in tons should be between 1 and 10,000 for pressure vessels. Possible unit-conversion error.",
+            ),
+            "vessel_id_mm": (
+                100,
+                20000,
+                "Vessel ID should be between 100mm and 20,000mm for typical pressure vessels.",
+            ),
+            "vessel_tl_tl_length_mm": (
+                500,
+                200000,
+                "Vessel length should be between 500mm and 200,000mm.",
+            ),
             "shell_min_thk_mm": (1, 500, "Shell thickness should be between 1mm and 500mm."),
             "head_min_thk_mm": (1, 500, "Head thickness should be between 1mm and 500mm."),
         }
@@ -128,7 +140,7 @@ class Validator:
         for field_attr, field in all_fields:
             if field.status in (FieldStatus.MISSING, FieldStatus.AMBIGUOUS, FieldStatus.CONFLICT):
                 needs_review = True
-            
+
             # Since validate_for_export requires all fields to be non-None, we must flag them here
             # to prevent bypassing the HITL loop and crashing the application.
             if field.value is None and field_attr not in required_fields:
@@ -143,6 +155,7 @@ class Validator:
 
             # Check confidence scores (only for automated extractions, not user confirmed/corrected)
             from src.config import settings
+
             if (
                 field.value is not None
                 and field.status not in (FieldStatus.USER_CONFIRMED, FieldStatus.USER_CORRECTED)

@@ -6,7 +6,7 @@ from langgraph.types import interrupt
 
 from src.annexure.builder import build_annexure
 from src.document.service import DocumentIngestionService
-from src.domain.schema import ExtractionField, FieldStatus
+from src.domain.schema import ExtractionField, ExtractionResult, FieldStatus
 from src.extraction.normalization import Normalizer
 from src.extraction.service import GeminiExtractionService
 from src.extraction.validation import Validator
@@ -128,20 +128,38 @@ def human_review_node(state: ExtractionState) -> dict:
     fields_for_review = []
 
     all_field_attrs = [
-        "tag_no", "description", "ref_data_sheet", "design_code", "moc",
-        "qty", "orientation", "vessel_id_mm", "vessel_tl_tl_length_mm",
-        "shell_min_thk_mm", "head_min_thk_mm", "head_type", "nozzle_type",
-        "impact_tested", "rt", "pwht", "support_type", "pickling_passivation", "weight_tons_each",
+        "tag_no",
+        "description",
+        "ref_data_sheet",
+        "design_code",
+        "moc",
+        "qty",
+        "orientation",
+        "vessel_id_mm",
+        "vessel_tl_tl_length_mm",
+        "shell_min_thk_mm",
+        "head_min_thk_mm",
+        "head_type",
+        "nozzle_type",
+        "impact_tested",
+        "rt",
+        "pwht",
+        "support_type",
+        "pickling_passivation",
+        "weight_tons_each",
     ]
 
     for attr in all_field_attrs:
         field: ExtractionField = getattr(normalized, attr)
         issues = [i for i in val_result.issues if i.field == attr]
-        
+
         needs_attention = (
-            field.status in (
-                FieldStatus.MISSING, FieldStatus.AMBIGUOUS,
-                FieldStatus.CONFLICT, FieldStatus.INVALID,
+            field.status
+            in (
+                FieldStatus.MISSING,
+                FieldStatus.AMBIGUOUS,
+                FieldStatus.CONFLICT,
+                FieldStatus.INVALID,
             )
             or issues
             or field.confidence < 0.8
@@ -162,11 +180,14 @@ def human_review_node(state: ExtractionState) -> dict:
     for p_attr in ["external", "internal"]:
         field: ExtractionField = getattr(normalized.painting, p_attr)
         issues = [i for i in val_result.issues if i.field == f"painting_{p_attr}"]
-        
+
         needs_attention = (
-            field.status in (
-                FieldStatus.MISSING, FieldStatus.AMBIGUOUS,
-                FieldStatus.CONFLICT, FieldStatus.INVALID,
+            field.status
+            in (
+                FieldStatus.MISSING,
+                FieldStatus.AMBIGUOUS,
+                FieldStatus.CONFLICT,
+                FieldStatus.INVALID,
             )
             or issues
             or field.confidence < 0.8
@@ -215,23 +236,43 @@ def apply_human_decision_node(state: ExtractionState) -> dict:
                 field: ExtractionField = getattr(normalized.painting, p_attr)
                 field.value = casted_val
                 field.confidence = 1.0 if casted_val is not None else 0.0
-                field.status = FieldStatus.USER_CORRECTED if casted_val is not None else FieldStatus.MISSING
+                field.status = (
+                    FieldStatus.USER_CORRECTED if casted_val is not None else FieldStatus.MISSING
+                )
             else:
                 if hasattr(normalized, field_name):
                     field: ExtractionField = getattr(normalized, field_name)
                     field.value = casted_val
                     field.confidence = 1.0 if casted_val is not None else 0.0
-                    field.status = FieldStatus.USER_CORRECTED if casted_val is not None else FieldStatus.MISSING
+                    field.status = (
+                        FieldStatus.USER_CORRECTED
+                        if casted_val is not None
+                        else FieldStatus.MISSING
+                    )
 
     # Any non-null field that was reviewed and approved without changes becomes USER_CONFIRMED
     all_fields = [
-        normalized.tag_no, normalized.description, normalized.ref_data_sheet,
-        normalized.design_code, normalized.moc, normalized.qty,
-        normalized.orientation, normalized.vessel_id_mm, normalized.vessel_tl_tl_length_mm,
-        normalized.shell_min_thk_mm, normalized.head_min_thk_mm, normalized.head_type,
-        normalized.nozzle_type, normalized.impact_tested, normalized.rt,
-        normalized.pwht, normalized.support_type, normalized.painting.external,
-        normalized.painting.internal, normalized.pickling_passivation, normalized.weight_tons_each,
+        normalized.tag_no,
+        normalized.description,
+        normalized.ref_data_sheet,
+        normalized.design_code,
+        normalized.moc,
+        normalized.qty,
+        normalized.orientation,
+        normalized.vessel_id_mm,
+        normalized.vessel_tl_tl_length_mm,
+        normalized.shell_min_thk_mm,
+        normalized.head_min_thk_mm,
+        normalized.head_type,
+        normalized.nozzle_type,
+        normalized.impact_tested,
+        normalized.rt,
+        normalized.pwht,
+        normalized.support_type,
+        normalized.painting.external,
+        normalized.painting.internal,
+        normalized.pickling_passivation,
+        normalized.weight_tons_each,
     ]
     for field in all_fields:
         if field.value is not None and field.status in (

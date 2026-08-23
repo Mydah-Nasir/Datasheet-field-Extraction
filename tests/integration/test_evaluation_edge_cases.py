@@ -65,7 +65,10 @@ def test_invalid_human_correction(monkeypatch):
     monkeypatch.setattr("src.graph.nodes.GeminiExtractionService", MockExtractionService)
 
     import os
-    pdf_path = os.path.join(os.path.dirname(__file__), "..", "..", "evaluation", "fixtures", "synthetic_datasheet_1.pdf")
+
+    pdf_path = os.path.join(
+        os.path.dirname(__file__), "..", "..", "evaluation", "fixtures", "synthetic_datasheet_1.pdf"
+    )
 
     # Initial run
     graph.invoke({"document_path": pdf_path, "workflow_id": thread_id}, config)

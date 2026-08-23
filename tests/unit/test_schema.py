@@ -2,9 +2,6 @@
 
 import json
 
-import pytest
-from pydantic import ValidationError
-
 from src.domain.schema import (
     Evidence,
     ExtractionField,

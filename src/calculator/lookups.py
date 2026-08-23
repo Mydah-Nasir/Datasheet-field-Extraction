@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Optional
-
 
 # Standard thickness-to-bending allowance lookup chart stub
 # (Thick plates >= 40mm require bending allowance compensation)
@@ -51,10 +50,10 @@ def get_bending_allowance(thickness_mm: float) -> float:
     """Stub lookup for bending allowance by thickness.
 
     If shell_thickness_mm >= 40 mm, looks up chart allowance;
-    otherwise returns 1.0 mm (standard default multiplier / thin plate case).
+    otherwise returns 0.0 mm (standard default for thin/medium plates < 40mm).
     """
     if thickness_mm < 40.0:
-        return 1.0
+        return 0.0
 
     # Match exact or nearest upper tier in chart
     for t_tier in sorted(DEFAULT_BENDING_ALLOWANCE_CHART.keys()):

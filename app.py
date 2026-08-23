@@ -1160,7 +1160,7 @@ with tab_calc:
             st.session_state["calc_thickness"] = default_thickness
             st.session_state["calc_moc"] = default_moc
             st.session_state["calc_qty"] = default_qty
-            st.session_state["calc_bending"] = get_bending_allowance(default_thickness) if default_thickness > 0 else 1.0
+            st.session_state["calc_bending"] = get_bending_allowance(default_thickness) if default_thickness > 0 else 0.0
             st.session_state["calc_density"] = get_material_density(default_moc) if default_moc else 7.85
             st.session_state["calc_rate"] = get_material_rate(default_moc) if default_moc else 2.50
 
@@ -1186,7 +1186,7 @@ with tab_calc:
         calc_plate_length = st.number_input("Plate Length H (mm)", min_value=0.0, value=12000.0, step=100.0, format="%.1f", key="calc_plate_length", help="Source: User Input. Standard stock raw plate length H.")
 
         # Auto-lookup bending allowance based on 40mm threshold chart
-        auto_bending = get_bending_allowance(calc_thickness) if calc_thickness > 0 else 1.0
+        auto_bending = get_bending_allowance(calc_thickness) if calc_thickness > 0 else 0.0
         calc_bending = st.number_input(
             "Bending Allowance (mm)",
             min_value=0.0,

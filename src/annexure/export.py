@@ -48,7 +48,7 @@ def _apply_excel_formatting(ws: Worksheet) -> None:
         left=Side(style="thin"),
         right=Side(style="thin"),
         top=Side(style="thin"),
-        bottom=Side(style="thin")
+        bottom=Side(style="thin"),
     )
 
     # Style the title row (row 1)
@@ -81,7 +81,7 @@ def _apply_excel_formatting(ws: Worksheet) -> None:
                     max_length = len(str(cell.value))
             except Exception:
                 pass
-        adjusted_width = (max_length + 2)
+        adjusted_width = max_length + 2
         # Cap width
         if adjusted_width > 50:
             adjusted_width = 50
@@ -113,7 +113,7 @@ def export_to_excel(records: Sequence[AnnexureRecord]) -> bytes:
             left=Side(style="thin"),
             right=Side(style="thin"),
             top=Side(style="thin"),
-            bottom=Side(style="thin")
+            bottom=Side(style="thin"),
         )
         for row in ws.iter_rows(min_row=3, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
             for cell in row:

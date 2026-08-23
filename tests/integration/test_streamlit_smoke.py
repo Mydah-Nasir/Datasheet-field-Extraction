@@ -9,4 +9,3 @@ def test_streamlit_app_imports():
         import pytest
 
         pytest.fail(f"Failed to import app: {e}")
-

@@ -3,7 +3,12 @@
 import copy
 import re
 
-from src.domain.schema import ExtractionField, ExtractionResult, FieldStatus, PaintingField
+from src.domain.schema import (
+    ExtractionField,
+    ExtractionResult,
+    FieldStatus,
+    PaintingField,
+)
 
 
 class Normalizer:
@@ -13,11 +18,54 @@ class Normalizer:
         """Deep copy and normalize all parameters in the extraction result."""
         result = copy.deepcopy(extraction)
 
-        self._normalize_string_field(result.tag_no, label_prefixes=["TAG NO\\.?", "TAG NUMBER", "TAG", "ITEM NO\\.?", "EQUIPMENT NO\\.?"])
-        self._normalize_string_field(result.description, label_prefixes=["DESCRIPTION", "ITEM DESCRIPTION", "SERVICE", "EQUIPMENT NAME"])
-        self._normalize_string_field(result.ref_data_sheet, label_prefixes=["REF DATA SHEET", "REFERENCE DATA SHEET", "DATA SHEET NO\\.?", "DS NO\\.?", "DWG NO\\.?", "DRAWING NO\\.?"])
-        self._normalize_string_field(result.design_code, label_prefixes=["DESIGN CODE", "CODE", "DESIGN SPECIFICATION", "APPLICABLE CODE"])
-        self._normalize_string_field(result.moc, label_prefixes=["MOC", "MATERIAL OF CONSTRUCTION", "MATERIAL", "SHELL MATERIAL"])
+        self._normalize_string_field(
+            result.tag_no,
+            label_prefixes=[
+                "TAG NO\\.?",
+                "TAG NUMBER",
+                "TAG",
+                "ITEM NO\\.?",
+                "EQUIPMENT NO\\.?",
+            ],
+        )
+        self._normalize_string_field(
+            result.description,
+            label_prefixes=[
+                "DESCRIPTION",
+                "ITEM DESCRIPTION",
+                "SERVICE",
+                "EQUIPMENT NAME",
+            ],
+        )
+        self._normalize_string_field(
+            result.ref_data_sheet,
+            label_prefixes=[
+                "REF DATA SHEET",
+                "REFERENCE DATA SHEET",
+                "DATA SHEET NO\\.?",
+                "DS NO\\.?",
+                "DWG NO\\.?",
+                "DRAWING NO\\.?",
+            ],
+        )
+        self._normalize_string_field(
+            result.design_code,
+            label_prefixes=[
+                "DESIGN CODE",
+                "CODE",
+                "DESIGN SPECIFICATION",
+                "APPLICABLE CODE",
+            ],
+        )
+        self._normalize_string_field(
+            result.moc,
+            label_prefixes=[
+                "MOC",
+                "MATERIAL OF CONSTRUCTION",
+                "MATERIAL",
+                "SHELL MATERIAL",
+            ],
+        )
 
         self._normalize_numeric(result.qty, "unit")
         self._normalize_numeric(result.vessel_id_mm, "mm")
@@ -26,7 +74,10 @@ class Normalizer:
         self._normalize_thickness(result.head_min_thk_mm)
         self._normalize_weight(result.weight_tons_each)
 
-        self._normalize_string_field(result.head_type, label_prefixes=["HEAD TYPE", "TYPE OF HEAD", "DISH TYPE", "CLOSURE TYPE"])
+        self._normalize_string_field(
+            result.head_type,
+            label_prefixes=["HEAD TYPE", "TYPE OF HEAD", "DISH TYPE", "CLOSURE TYPE"],
+        )
         self._normalize_nozzle_type(result.nozzle_type)
 
         self._normalize_boolean(result.impact_tested)
@@ -34,16 +85,26 @@ class Normalizer:
 
         self._normalize_orientation(result.orientation)
 
-        self._normalize_string_field(result.rt, label_prefixes=["RT", "RADIOGRAPHY", "NDE", "NDT"])
-        self._normalize_string_field(result.support_type, label_prefixes=["TYPE OF SUPPORT", "SUPPORT TYPE", "SUPPORT"])
+        self._normalize_string_field(
+            result.rt, label_prefixes=["RT", "RADIOGRAPHY", "NDE", "NDT"]
+        )
+        self._normalize_string_field(
+            result.support_type,
+            label_prefixes=["TYPE OF SUPPORT", "SUPPORT TYPE", "SUPPORT"],
+        )
 
         self._normalize_painting(result.painting)
-        if hasattr(result, "pickling_passivation") and result.pickling_passivation is not None:
+        if (
+            hasattr(result, "pickling_passivation")
+            and result.pickling_passivation is not None
+        ):
             self._normalize_pickling_passivation(result.pickling_passivation)
 
         return result
 
-    def _normalize_string_field(self, field: ExtractionField[str], label_prefixes: list[str] | None = None) -> None:
+    def _normalize_string_field(
+        self, field: ExtractionField[str], label_prefixes: list[str] | None = None
+    ) -> None:
         """Normalize a generic string field (e.g. tag number). If value is missing, attempt to extract from evidence."""
         if field.status == FieldStatus.NORMALIZED:
             return
@@ -55,7 +116,12 @@ class Normalizer:
                 cleaned_val = raw_evidence
                 if label_prefixes:
                     for prefix in label_prefixes:
-                        cleaned_val = re.sub(rf"^(?:{prefix})\s*(?:[:=]\s*|\s+)", "", cleaned_val, flags=re.IGNORECASE).strip()
+                        cleaned_val = re.sub(
+                            rf"^(?:{prefix})\s*(?:[:=]\s*|\s+)",
+                            "",
+                            cleaned_val,
+                            flags=re.IGNORECASE,
+                        ).strip()
                 if cleaned_val:
                     field.value = cleaned_val
                     field.status = FieldStatus.NORMALIZED
@@ -106,10 +172,9 @@ class Normalizer:
                 seen_lower.add(key)
                 cleaned_items.append(cleaned)
 
-        if cleaned_items:
-            normalized_str = ", ".join(cleaned_items)
-        else:
-            normalized_str = field.value.strip()
+        normalized_str = (
+            ", ".join(cleaned_items) if cleaned_items else field.value.strip()
+        )
 
         if field.value != normalized_str:
             field.value = normalized_str
@@ -153,7 +218,9 @@ class Normalizer:
                     return
 
         # Pattern 3: Shell course dimension "<Length> x <Thickness> THK." e.g. "18607.2 [61'-0 5/8"] x 28.6 [1.126"] THK."
-        course_pattern = r"x\s*(\d+(?:\.\d+)?)\s*(?:\[[^\]]*\])?\s*(?:THK\.?|THICKNESS|TH\.?)"
+        course_pattern = (
+            r"x\s*(\d+(?:\.\d+)?)\s*(?:\[[^\]]*\])?\s*(?:THK\.?|THICKNESS|TH\.?)"
+        )
         for src in (val_str, evidence_text):
             if src:
                 m = re.search(course_pattern, src, re.IGNORECASE)
@@ -164,15 +231,27 @@ class Normalizer:
 
         # Pattern 4: General thickness callouts e.g. "THK. 28.6", "28.6 mm THK.", "TH. 25.0"
         if field.value is None and evidence_text:
-            thk_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:\[[^\]]*\])?\s*(?:mm\s*)?(?:THK\.?|THICKNESS)", evidence_text, re.IGNORECASE)
+            thk_match = re.search(
+                r"(\d+(?:\.\d+)?)\s*(?:\[[^\]]*\])?\s*(?:mm\s*)?(?:THK\.?|THICKNESS)",
+                evidence_text,
+                re.IGNORECASE,
+            )
             if not thk_match:
-                thk_match = re.search(r"(?:THK\.?|THICKNESS|TH\.?)\s*:?\s*(\d+(?:\.\d+)?)", evidence_text, re.IGNORECASE)
+                thk_match = re.search(
+                    r"(?:THK\.?|THICKNESS|TH\.?)\s*:?\s*(\d+(?:\.\d+)?)",
+                    evidence_text,
+                    re.IGNORECASE,
+                )
             if not thk_match:
-                thk_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:mm\b)", evidence_text, re.IGNORECASE)
+                thk_match = re.search(
+                    r"(\d+(?:\.\d+)?)\s*(?:mm\b)", evidence_text, re.IGNORECASE
+                )
             if not thk_match:
                 thk_match = re.search(r"[-+]?\d*\.\d+|\d+", evidence_text)
             if thk_match:
-                field.value = float(thk_match.group(1) if thk_match.lastindex else thk_match.group(0))
+                field.value = float(
+                    thk_match.group(1) if thk_match.lastindex else thk_match.group(0)
+                )
                 field.status = FieldStatus.NORMALIZED
                 return
 
@@ -231,7 +310,9 @@ class Normalizer:
             evidence_text = " ".join([e.text for e in field.evidence if e.text]).lower()
 
         # If field.value is None or empty, recover from evidence text
-        if field.value is None or (isinstance(field.value, str) and not field.value.strip()):
+        if field.value is None or (
+            isinstance(field.value, str) and not field.value.strip()
+        ):
             if not evidence_text:
                 return
             match = re.search(r"[-+]?\d+(?:,\d{3})*(?:\.\d+)?|\d*\.\d+", evidence_text)
@@ -267,7 +348,11 @@ class Normalizer:
         # Perform unit conversions based on evidence
         # Length conversions
         if target_unit == "mm":
-            if " mm" in evidence_text or "mm " in evidence_text or "mm" in evidence_text:
+            if (
+                " mm" in evidence_text
+                or "mm " in evidence_text
+                or "mm" in evidence_text
+            ):
                 pass  # Already mm
             elif " cm" in evidence_text or "cm " in evidence_text:
                 val_float *= 10
@@ -280,17 +365,18 @@ class Normalizer:
         elif target_unit == "ton":
             if "ton" in evidence_text:
                 pass  # Already tons
-            elif "kg" in evidence_text:
+            elif "kg" in evidence_text and val_float >= 500:
                 # Guard against double-conversion: if the model already converted
                 # from kg to tons (e.g., 337,000 kg → 337), don't divide again.
                 # If value >= 500, it is unconverted kg and needs division by 1000.
-                if val_float >= 500:
-                    val_float /= 1000
+                val_float /= 1000
 
         # Attempt to retain integer type for qty
         if target_unit == "unit":
             try:
-                normalized_value = int(val_float) if val_float.is_integer() else val_float
+                normalized_value = (
+                    int(val_float) if val_float.is_integer() else val_float
+                )
             except Exception:
                 normalized_value = val_float
         else:
@@ -316,8 +402,12 @@ class Normalizer:
             if evidence_text:
                 no_pair_pattern = r"(?:◯|○|□|\[\s*\]|\(\s*\))\s*YES\b[^\n\r]*(?:◉|●|⦿|☑|☒|\[[xX•*]\]|\([•*xX]\))\s*NO\b"
                 yes_pair_pattern = r"(?:◉|●|⦿|☑|☒|\[[xX•*]\]|\([•*xX]\))\s*YES\b[^\n\r]*(?:◯|○|□|\[\s*\]|\(\s*\))\s*NO\b"
-                is_no_pair = bool(re.search(no_pair_pattern, evidence_text, re.IGNORECASE))
-                is_yes_pair = bool(re.search(yes_pair_pattern, evidence_text, re.IGNORECASE))
+                is_no_pair = bool(
+                    re.search(no_pair_pattern, evidence_text, re.IGNORECASE)
+                )
+                is_yes_pair = bool(
+                    re.search(yes_pair_pattern, evidence_text, re.IGNORECASE)
+                )
 
                 if is_no_pair and not is_yes_pair:
                     field.value = "NO"
@@ -330,11 +420,15 @@ class Normalizer:
 
                 no_direct = r"(?:(?:◉|●|⦿|☑|☒|\[[xX•*]\]|\([•*xX]\))\s*NO\b|\bNO\s*(?:◉|●|⦿|☑|☒|\[[xX•*]\]|\([•*xX]\))|(?<!\()\b(?:IT|IMPACT\s*TEST(?:ING|ED)?|PWHT)\s*[:=\-]\s*NO\b)"
                 yes_direct = r"(?:(?:◉|●|⦿|☑|☒|\[[xX•*]\]|\([•*xX]\))\s*YES\b|\bYES\s*(?:◉|●|⦿|☑|☒|\[[xX•*]\]|\([•*xX]\))|(?<!\()\b(?:IT|IMPACT\s*TEST(?:ING|ED)?|PWHT)\s*[:=\-]\s*YES\b)"
-                if re.search(yes_direct, evidence_text, re.IGNORECASE) and not re.search(no_direct, evidence_text, re.IGNORECASE):
+                if re.search(
+                    yes_direct, evidence_text, re.IGNORECASE
+                ) and not re.search(no_direct, evidence_text, re.IGNORECASE):
                     field.value = "YES"
                     field.status = FieldStatus.NORMALIZED
                     return
-                if re.search(no_direct, evidence_text, re.IGNORECASE) and not re.search(yes_direct, evidence_text, re.IGNORECASE):
+                if re.search(no_direct, evidence_text, re.IGNORECASE) and not re.search(
+                    yes_direct, evidence_text, re.IGNORECASE
+                ):
                     field.value = "NO"
                     field.status = FieldStatus.NORMALIZED
                     return
@@ -392,8 +486,14 @@ class Normalizer:
 
     def _normalize_painting(self, painting: PaintingField) -> None:
         """Normalize painting sub-fields."""
-        self._normalize_string_field(painting.external, label_prefixes=["EXTERNAL PAINTING", "EXTERNAL", "PAINTING"])
-        self._normalize_string_field(painting.internal, label_prefixes=["INTERNAL PAINTING", "INTERNAL", "LINING"])
+        self._normalize_string_field(
+            painting.external,
+            label_prefixes=["EXTERNAL PAINTING", "EXTERNAL", "PAINTING"],
+        )
+        self._normalize_string_field(
+            painting.internal,
+            label_prefixes=["INTERNAL PAINTING", "INTERNAL", "LINING"],
+        )
 
     def _normalize_pickling_passivation(self, field: ExtractionField[str]) -> None:
         """Normalize Pickling & Passivation specifications."""
@@ -405,7 +505,14 @@ class Normalizer:
                 evi_text = " ".join([e.text for e in field.evidence if e.text]).strip()
                 if evi_text:
                     stripped_evi = evi_text.upper()
-                    if stripped_evi in ("NA", "N/A", "NONE", "NOT APPLICABLE", "-", "N.A."):
+                    if stripped_evi in (
+                        "NA",
+                        "N/A",
+                        "NONE",
+                        "NOT APPLICABLE",
+                        "-",
+                        "N.A.",
+                    ):
                         field.value = "N/A"
                     else:
                         field.value = evi_text
@@ -416,8 +523,23 @@ class Normalizer:
             return
 
         stripped = field.value.strip()
-        if not stripped or stripped.upper() in ("NA", "N/A", "NONE", "NOT APPLICABLE", "-", "N.A."):
+        if not stripped or stripped.upper() in (
+            "NA",
+            "N/A",
+            "NONE",
+            "NOT APPLICABLE",
+            "-",
+            "N.A.",
+        ):
             field.value = "N/A"
             field.status = FieldStatus.NORMALIZED
         else:
-            self._normalize_string_field(field, label_prefixes=["PICKLING & PASSIVATION", "PRESERVATION", "PICKLING", "PASSIVATION"])
+            self._normalize_string_field(
+                field,
+                label_prefixes=[
+                    "PICKLING & PASSIVATION",
+                    "PRESERVATION",
+                    "PICKLING",
+                    "PASSIVATION",
+                ],
+            )
