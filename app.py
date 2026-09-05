@@ -1,5 +1,6 @@
 """Streamlit application for Multi-Datasheet Extraction and Annexure-1 Equipment Summary."""
 
+import base64
 import math
 import os
 import re
@@ -190,6 +191,12 @@ st.markdown(
 )
 
 
+@st.cache_data
+def get_logo_base64() -> str:
+    """Load and cache the MIS logo as a base64 string."""
+    return base64.b64encode((_ROOT / "MIS-logo.png").read_bytes()).decode()
+
+
 @st.cache_resource
 def get_graph():
     """Cache the compiled LangGraph workflow checkpointer."""
@@ -262,6 +269,16 @@ def extract_all_documents(doc_ids: List[str], progress_placeholder=None) -> None
 
 # --- Sidebar: Configuration & Document Management ---
 with st.sidebar:
+    st.markdown(
+        f"""
+        <div style="display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:16px;">
+            <img src="data:image/png;base64,{get_logo_base64()}" style="height:72px; width:auto;" />
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.divider()
+
     st.markdown(
         f"""
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">

@@ -75,6 +75,7 @@ temp/
 tmp/
 *.pdf
 *.png
+!MIS-logo.png
 *.jpg
 *.jpeg
 *.svg.tmp
